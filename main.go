@@ -13,7 +13,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/adrium/goheif"
 	"github.com/gin-contrib/cors"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
@@ -259,14 +258,7 @@ func convertToTaskResponse(task Task) TaskResponse {
 func decodeImage(file multipart.File, ext string) (image.Image, string, error) {
 	file.Seek(0, 0)
 
-	if ext == ".heic" || ext == ".heif" {
-		img, err := goheif.Decode(file)
-		if err != nil {
-			return nil, "", fmt.Errorf("HEIC decode error: %v", err)
-		}
-		return img, "heic", nil
-	}
-
+	// WebP support
 	if ext == ".webp" {
 		img, err := webp.Decode(file)
 		if err == nil {
@@ -274,6 +266,7 @@ func decodeImage(file multipart.File, ext string) (image.Image, string, error) {
 		}
 	}
 
+	// BMP support
 	if ext == ".bmp" {
 		img, err := bmp.Decode(file)
 		if err == nil {
@@ -281,6 +274,7 @@ func decodeImage(file multipart.File, ext string) (image.Image, string, error) {
 		}
 	}
 
+	// TIFF support
 	if ext == ".tiff" || ext == ".tif" {
 		img, err := tiff.Decode(file)
 		if err == nil {
@@ -288,6 +282,7 @@ func decodeImage(file multipart.File, ext string) (image.Image, string, error) {
 		}
 	}
 
+	// Standard image formats (JPEG, PNG, GIF)
 	file.Seek(0, 0)
 	img, format, err := image.Decode(file)
 	if err != nil {
@@ -675,6 +670,17 @@ func uploadImage(c *gin.Context) {
 	defer file.Close()
 
 	originalExt := strings.ToLower(filepath.Ext(handler.Filename))
+
+	// HEIC/HEIF formatlarini qo'llab-quvvatlamaymiz
+	if originalExt == ".heic" || originalExt == ".heif" {
+		c.JSON(400, UploadResponse{
+			Success:    false,
+			StatusCode: 400,
+			Message:    "HEIC/HEIF formatlar qo'llab-quvvatlanmaydi. JPEG, PNG, WebP, GIF, BMP, TIFF formatlaridan foydalaning.",
+		})
+		return
+	}
+
 	img, _, err := decodeImage(file, originalExt)
 	if err != nil {
 		c.JSON(400, UploadResponse{
@@ -705,6 +711,9 @@ func uploadImage(c *gin.Context) {
 	case ".tiff", ".tif":
 		saveExt = ".tiff"
 		contentType = "image/tiff"
+	case ".webp":
+		saveExt = ".jpg" // WebP ni JPEG ga o'tkazamiz
+		contentType = "image/jpeg"
 	default:
 		saveExt = ".jpg"
 		contentType = "image/jpeg"

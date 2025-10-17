@@ -1,39 +1,32 @@
-# --- Build stage ---
+# Build stage
 FROM golang:1.24-alpine AS builder
 
 WORKDIR /app
 
-# Install required dependencies for build
-RUN apk add --no-cache git gcc g++ musl-dev make pkgconfig
+# Install git for go mod download
+RUN apk add --no-cache git
 
-# Install swagger (if needed)
-RUN go install github.com/swaggo/swag/cmd/swag@latest
-
-# Copy go.mod and go.sum
+# Copy go mod files
 COPY go.mod go.sum ./
+
+# Download dependencies
 RUN go mod download
 
 # Copy source code
 COPY . .
 
-# Generate Swagger docs
-RUN swag init -g main.go
-
 # Build application
-RUN CGO_ENABLED=1 GOOS=linux GOARCH=amd64 go build -a -installsuffix cgo -ldflags="-w -s" -o main .
+RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o main .
 
-# --- Final stage ---
+# Final stage
 FROM alpine:latest
 
-# Install runtime dependencies
-RUN apk add --no-cache ca-certificates libstdc++ libgcc
+RUN apk --no-cache add ca-certificates
 
 WORKDIR /app
 
-# Copy binary from builder
 COPY --from=builder /app/main .
 
-# Create uploads directory
 RUN mkdir -p uploads
 
 EXPOSE 1212
