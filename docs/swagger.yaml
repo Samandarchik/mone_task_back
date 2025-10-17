@@ -1,0 +1,795 @@
+basePath: /
+definitions:
+  main.Category:
+    properties:
+      data:
+        example: Work
+        type: string
+      id:
+        example: 550e8400-e29b-41d4-a716-446655440000
+        type: string
+    type: object
+  main.TaskItem:
+    properties:
+      data:
+        example: /static/image.jpg
+        type: string
+      id:
+        example: 550e8400-e29b-41d4-a716-446655440002
+        type: string
+      task_id:
+        example: 550e8400-e29b-41d4-a716-446655440001
+        type: string
+      time:
+        example: "2025-10-17T12:00:00Z"
+        type: string
+      type:
+        example: image
+        type: string
+    type: object
+  main.TaskItemResponse:
+    properties:
+      data:
+        properties:
+          data:
+            type: string
+          id:
+            type: string
+          time:
+            type: string
+        type: object
+      id:
+        type: string
+      type:
+        type: string
+    type: object
+  main.TaskResponse:
+    properties:
+      category:
+        items:
+          $ref: '#/definitions/main.Category'
+        type: array
+      category_id:
+        type: string
+      deleted_at:
+        type: string
+      id:
+        type: string
+      is_success:
+        type: boolean
+      name:
+        type: string
+      position:
+        type: integer
+      price:
+        type: number
+      task_name:
+        items:
+          $ref: '#/definitions/main.TaskItemResponse'
+        type: array
+    type: object
+  main.UploadData:
+    properties:
+      content_type:
+        type: string
+      duration_ms:
+        type: integer
+      file_name:
+        type: string
+      id:
+        type: string
+      size:
+        type: integer
+      url:
+        type: string
+    type: object
+  main.UploadResponse:
+    properties:
+      data:
+        $ref: '#/definitions/main.UploadData'
+      message:
+        type: string
+      statusCode:
+        type: integer
+      success:
+        type: boolean
+    type: object
+host: localhost:1212
+info:
+  contact:
+    email: support@swagger.io
+    name: API Support
+    url: http://www.swagger.io/support
+  description: Task Management API with Categories, Tasks and Task Items
+  license:
+    name: Apache 2.0
+    url: http://www.apache.org/licenses/LICENSE-2.0.html
+  termsOfService: http://swagger.io/terms/
+  title: Task Management API
+  version: "1.0"
+paths:
+  /categories:
+    get:
+      description: Get a list of all categories
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/main.Category'
+            type: array
+      summary: Get all categories
+      tags:
+      - categories
+    post:
+      consumes:
+      - application/json
+      description: Create a new category with the provided data
+      parameters:
+      - description: Category data
+        in: body
+        name: category
+        required: true
+        schema:
+          $ref: '#/definitions/main.Category'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/main.Category'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Create a new category
+      tags:
+      - categories
+  /categories/{id}:
+    delete:
+      description: Delete a category by ID
+      parameters:
+      - description: Category ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Delete category
+      tags:
+      - categories
+    get:
+      description: Get a single category by its ID
+      parameters:
+      - description: Category ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/main.Category'
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Get category by ID
+      tags:
+      - categories
+    put:
+      consumes:
+      - application/json
+      description: Update an existing category by ID
+      parameters:
+      - description: Category ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Updated category data
+        in: body
+        name: category
+        required: true
+        schema:
+          $ref: '#/definitions/main.Category'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/main.Category'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Update category
+      tags:
+      - categories
+  /task-items:
+    get:
+      description: Get a list of all task items
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/main.TaskItem'
+            type: array
+      summary: Get all task items
+      tags:
+      - task-items
+    post:
+      consumes:
+      - application/json
+      description: Create a new task item
+      parameters:
+      - description: Task item data
+        in: body
+        name: item
+        required: true
+        schema:
+          $ref: '#/definitions/main.TaskItem'
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/main.TaskItem'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Create task item
+      tags:
+      - task-items
+  /task-items/{id}:
+    delete:
+      description: Delete a task item and its associated file
+      parameters:
+      - description: Task item ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Delete task item
+      tags:
+      - task-items
+    get:
+      description: Get a single task item by ID
+      parameters:
+      - description: Task item ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/main.TaskItem'
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Get task item by ID
+      tags:
+      - task-items
+    put:
+      consumes:
+      - application/json
+      description: Update an existing task item
+      parameters:
+      - description: Task item ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Updated task item data
+        in: body
+        name: item
+        required: true
+        schema:
+          $ref: '#/definitions/main.TaskItem'
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/main.TaskItem'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Update task item
+      tags:
+      - task-items
+  /tasks:
+    get:
+      description: Get a list of all active tasks ordered by position
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/main.TaskResponse'
+            type: array
+      summary: Get all tasks
+      tags:
+      - tasks
+    post:
+      consumes:
+      - application/json
+      description: Create a new task with category, name, and optional position
+      parameters:
+      - description: Task data
+        in: body
+        name: task
+        required: true
+        schema:
+          properties:
+            category_id:
+              type: string
+            is_success:
+              type: boolean
+            name:
+              type: string
+            position:
+              type: integer
+            price:
+              type: number
+          type: object
+      produces:
+      - application/json
+      responses:
+        "201":
+          description: Created
+          schema:
+            $ref: '#/definitions/main.TaskResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Create a new task
+      tags:
+      - tasks
+  /tasks/{id}:
+    delete:
+      description: Soft delete a task (can be restored later)
+      parameters:
+      - description: Task ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Soft delete task
+      tags:
+      - tasks
+    get:
+      description: Get a single task by its ID
+      parameters:
+      - description: Task ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/main.TaskResponse'
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Get task by ID
+      tags:
+      - tasks
+    put:
+      consumes:
+      - application/json
+      description: Update an existing task
+      parameters:
+      - description: Task ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Updated task data
+        in: body
+        name: task
+        required: true
+        schema:
+          properties:
+            category_id:
+              type: string
+            is_success:
+              type: boolean
+            name:
+              type: string
+            price:
+              type: number
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/main.TaskResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Update task
+      tags:
+      - tasks
+  /tasks/{id}/items:
+    get:
+      description: Get all items for a specific task
+      parameters:
+      - description: Task ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/main.TaskItem'
+            type: array
+      summary: Get task items by task ID
+      tags:
+      - task-items
+  /tasks/{id}/permanent:
+    delete:
+      description: Permanently delete a task and all its items
+      parameters:
+      - description: Task ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Permanently delete task
+      tags:
+      - tasks
+  /tasks/{id}/position:
+    put:
+      consumes:
+      - application/json
+      description: Change the position of a task in the list
+      parameters:
+      - description: Task ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: New position
+        in: body
+        name: position
+        required: true
+        schema:
+          properties:
+            position:
+              type: integer
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/main.TaskResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Update task position
+      tags:
+      - tasks
+  /tasks/{id}/restore:
+    put:
+      description: Restore a soft-deleted task
+      parameters:
+      - description: Task ID
+        in: path
+        name: id
+        required: true
+        type: string
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            additionalProperties: true
+            type: object
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Restore deleted task
+      tags:
+      - tasks
+  /tasks/{id}/success:
+    put:
+      consumes:
+      - application/json
+      description: Update task success status and price
+      parameters:
+      - description: Task ID
+        in: path
+        name: id
+        required: true
+        type: string
+      - description: Success status and price
+        in: body
+        name: success
+        required: true
+        schema:
+          properties:
+            is_success:
+              type: boolean
+            price:
+              type: number
+          type: object
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/main.TaskResponse'
+        "400":
+          description: Bad Request
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+        "404":
+          description: Not Found
+          schema:
+            additionalProperties:
+              type: string
+            type: object
+      summary: Mark task as success
+      tags:
+      - tasks
+  /tasks/deleted:
+    get:
+      description: Get a list of all soft-deleted tasks
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            items:
+              $ref: '#/definitions/main.TaskResponse'
+            type: array
+      summary: Get deleted tasks
+      tags:
+      - tasks
+  /upload/audio:
+    post:
+      consumes:
+      - multipart/form-data
+      description: Upload an audio file in any format
+      parameters:
+      - description: Audio file
+        in: formData
+        name: audio
+        required: true
+        type: file
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/main.UploadResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/main.UploadResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/main.UploadResponse'
+      summary: Upload audio
+      tags:
+      - uploads
+  /upload/image:
+    post:
+      consumes:
+      - multipart/form-data
+      description: Upload an image file in any format (JPEG, PNG, GIF, BMP, TIFF,
+        WebP, HEIC, HEIF)
+      parameters:
+      - description: Image file
+        in: formData
+        name: image
+        required: true
+        type: file
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/main.UploadResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/main.UploadResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/main.UploadResponse'
+      summary: Upload image
+      tags:
+      - uploads
+  /upload/video:
+    post:
+      consumes:
+      - multipart/form-data
+      description: Upload a video file in any format
+      parameters:
+      - description: Video file
+        in: formData
+        name: video
+        required: true
+        type: file
+      produces:
+      - application/json
+      responses:
+        "200":
+          description: OK
+          schema:
+            $ref: '#/definitions/main.UploadResponse'
+        "400":
+          description: Bad Request
+          schema:
+            $ref: '#/definitions/main.UploadResponse'
+        "500":
+          description: Internal Server Error
+          schema:
+            $ref: '#/definitions/main.UploadResponse'
+      summary: Upload video
+      tags:
+      - uploads
+schemes:
+- http
+swagger: "2.0"
