@@ -1,0 +1,29 @@
+version: "3.9"
+
+services:
+  db:
+    image: postgres:15
+    container_name: taskdb
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: taskdb
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  app:
+    build: .
+    container_name: taskmanager
+    ports:
+      - "1212:1212"
+    environment:
+      - DSN=host=db user=postgres password=password dbname=taskdb port=5432 sslmode=disable
+    volumes:
+      - ./uploads:/root/uploads
+    depends_on:
+      - db
+
+volumes:
+  pgdata:
