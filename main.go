@@ -13,7 +13,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gin-contrib/cors"
+	"github.com/adrium/goheif"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/nfnt/resize"
@@ -26,7 +26,7 @@ import (
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 
-	_ "taskmanager/docs"
+	_ "taskmanager/docs" // Swagger docs import
 )
 
 // @title Task Management API
@@ -43,7 +43,7 @@ import (
 
 // @host localhost:1212
 // @BasePath /
-// @schemes http https
+// @schemes http
 
 // Models
 type Category struct {
@@ -94,6 +94,7 @@ type TaskResponse struct {
 	TaskName   []TaskItemResponse `json:"task_name"`
 }
 
+// Upload response structures
 type UploadData struct {
 	ID          string `json:"id"`
 	Size        int64  `json:"size"`
@@ -113,117 +114,60 @@ type UploadResponse struct {
 var db *gorm.DB
 
 func main() {
-	// Environment variables with defaults
-	dbHost := getEnv("DB_HOST", "localhost")
-	dbUser := getEnv("DB_USER", "postgres")
-	dbPassword := getEnv("DB_PASSWORD", "password")
-	dbName := getEnv("DB_NAME", "taskdb")
-	dbPort := getEnv("DB_PORT", "5432")
-	serverPort := getEnv("SERVER_PORT", "1212")
-	baseURL := getEnv("BASE_URL", "http://localhost:1212")
-
-	// Database connection
-	dsn := fmt.Sprintf("host=%s user=%s password=%s dbname=%s port=%s sslmode=disable TimeZone=Asia/Tashkent",
-		dbHost, dbUser, dbPassword, dbName, dbPort)
-
+	dsn := "host=localhost user=postgres password=password dbname=taskdb port=5432 sslmode=disable"
 	var err error
 	db, err = gorm.Open(postgres.Open(dsn), &gorm.Config{})
 	if err != nil {
-		log.Fatal("Failed to connect database:", err)
+		panic("failed to connect database")
 	}
 
-	// Auto migrate models
-	if err := db.AutoMigrate(&Category{}, &Task{}, &TaskItem{}); err != nil {
-		log.Fatal("Failed to migrate database:", err)
-	}
+	db.AutoMigrate(&Category{}, &Task{}, &TaskItem{})
 
-	// Create uploads directory
-	if err := os.MkdirAll("uploads", os.ModePerm); err != nil {
-		log.Fatal("Failed to create uploads directory:", err)
-	}
-
-	// Gin setup
-	gin.SetMode(gin.ReleaseMode)
 	r := gin.Default()
-
-	// CORS configuration
-	config := cors.DefaultConfig()
-	config.AllowOrigins = []string{"*"}
-	config.AllowMethods = []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"}
-	config.AllowHeaders = []string{"Origin", "Content-Type", "Authorization"}
-	r.Use(cors.New(config))
-
-	// Static files
-	r.Static("/uploads", "./uploads")
 	r.Static("/static", "./uploads")
+	os.MkdirAll("uploads", os.ModePerm)
 
-	// Health check
-	r.GET("/health", func(c *gin.Context) {
-		c.JSON(200, gin.H{"status": "ok", "timestamp": time.Now()})
-	})
-
-	// Swagger
+	// Swagger documentation route
 	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 
-	// API routes
-	api := r.Group("/api")
-	{
-		// Categories
-		api.POST("/categories", createCategory)
-		api.GET("/categories", getCategories)
-		api.GET("/categories/:id", getCategory)
-		api.PUT("/categories/:id", updateCategory)
-		api.DELETE("/categories/:id", deleteCategory)
+	// Category routes
+	r.POST("/categories", createCategory)
+	r.GET("/categories", getCategories)
+	r.GET("/categories/:id", getCategory)
+	r.PUT("/categories/:id", updateCategory)
+	r.DELETE("/categories/:id", deleteCategory)
 
-		// Tasks
-		api.POST("/tasks", createTask)
-		api.GET("/tasks", getTasks)
-		api.GET("/tasks/deleted", getDeletedTasks)
-		api.GET("/tasks/:id", getTask)
-		api.PUT("/tasks/:id", updateTask)
-		api.PUT("/tasks/:id/position", updateTaskPosition)
-		api.DELETE("/tasks/:id", deleteTask)
-		api.PUT("/tasks/:id/restore", restoreTask)
-		api.DELETE("/tasks/:id/permanent", permanentDeleteTask)
-		api.PUT("/tasks/:id/success", markTaskSuccess)
+	// Task routes
+	r.POST("/tasks", createTask)
+	r.GET("/tasks", getTasks)
+	r.GET("/tasks/deleted", getDeletedTasks)
+	r.GET("/tasks/:id", getTask)
+	r.PUT("/tasks/:id", updateTask)
+	r.PUT("/tasks/:id/position", updateTaskPosition)
+	r.DELETE("/tasks/:id", deleteTask)
+	r.PUT("/tasks/:id/restore", restoreTask)
+	r.DELETE("/tasks/:id/permanent", permanentDeleteTask)
+	r.PUT("/tasks/:id/success", markTaskSuccess)
 
-		// Task Items
-		api.POST("/task-items", createTaskItem)
-		api.GET("/task-items", getTaskItems)
-		api.GET("/task-items/:id", getTaskItem)
-		api.GET("/tasks/:id/items", getTaskItemsByTaskID)
-		api.PUT("/task-items/:id", updateTaskItem)
-		api.DELETE("/task-items/:id", deleteTaskItem)
+	// Task Item routes
+	r.POST("/task-items", createTaskItem)
+	r.GET("/task-items", getTaskItems)
+	r.GET("/task-items/:id", getTaskItem)
+	r.GET("/tasks/:id/items", getTaskItemsByTaskID)
+	r.PUT("/task-items/:id", updateTaskItem)
+	r.DELETE("/task-items/:id", deleteTaskItem)
 
-		// Uploads
-		api.POST("/upload/image", uploadImage)
-		api.POST("/upload/audio", uploadAudio)
-		api.POST("/upload/video", uploadVideo)
-	}
+	// File upload routes
+	r.POST("/upload/image", uploadImage)
+	r.POST("/upload/audio", uploadAudio)
+	r.POST("/upload/video", uploadVideo)
 
-	// Root redirects
-	r.GET("/", func(c *gin.Context) {
-		c.Redirect(302, "/swagger/index.html")
-	})
-
-	log.Printf("Server starting on port %s", serverPort)
-	log.Printf("Base URL: %s", baseURL)
-	log.Printf("Swagger docs: %s/swagger/index.html", baseURL)
-	log.Printf("Health check: %s/health", baseURL)
-
-	if err := r.Run(":" + serverPort); err != nil {
-		log.Fatal("Failed to start server:", err)
-	}
+	log.Println("Server running on :1212")
+	log.Println("Swagger documentation available at http://localhost:1212/swagger/index.html")
+	r.Run(":1212")
 }
 
-func getEnv(key, defaultValue string) string {
-	value := os.Getenv(key)
-	if value == "" {
-		return defaultValue
-	}
-	return value
-}
-
+// Helper function to convert Task to TaskResponse
 func convertToTaskResponse(task Task) TaskResponse {
 	response := TaskResponse{
 		ID:         task.ID,
@@ -255,10 +199,20 @@ func convertToTaskResponse(task Task) TaskResponse {
 	return response
 }
 
+// Helper function to decode any image format
 func decodeImage(file multipart.File, ext string) (image.Image, string, error) {
 	file.Seek(0, 0)
 
-	// WebP support
+	// Try HEIC/HEIF first
+	if ext == ".heic" || ext == ".heif" {
+		img, err := goheif.Decode(file)
+		if err != nil {
+			return nil, "", fmt.Errorf("HEIC decode error: %v", err)
+		}
+		return img, "heic", nil
+	}
+
+	// Try WebP
 	if ext == ".webp" {
 		img, err := webp.Decode(file)
 		if err == nil {
@@ -266,7 +220,7 @@ func decodeImage(file multipart.File, ext string) (image.Image, string, error) {
 		}
 	}
 
-	// BMP support
+	// Try BMP
 	if ext == ".bmp" {
 		img, err := bmp.Decode(file)
 		if err == nil {
@@ -274,7 +228,7 @@ func decodeImage(file multipart.File, ext string) (image.Image, string, error) {
 		}
 	}
 
-	// TIFF support
+	// Try TIFF
 	if ext == ".tiff" || ext == ".tif" {
 		img, err := tiff.Decode(file)
 		if err == nil {
@@ -282,7 +236,7 @@ func decodeImage(file multipart.File, ext string) (image.Image, string, error) {
 		}
 	}
 
-	// Standard image formats (JPEG, PNG, GIF)
+	// Try standard image formats (JPEG, PNG, GIF)
 	file.Seek(0, 0)
 	img, format, err := image.Decode(file)
 	if err != nil {
@@ -292,6 +246,7 @@ func decodeImage(file multipart.File, ext string) (image.Image, string, error) {
 	return img, format, nil
 }
 
+// Helper function to save image in original format or convert to JPEG
 func saveImage(img image.Image, savePath string, originalExt string) error {
 	out, err := os.Create(savePath)
 	if err != nil {
@@ -299,6 +254,7 @@ func saveImage(img image.Image, savePath string, originalExt string) error {
 	}
 	defer out.Close()
 
+	// Determine save format based on extension
 	switch strings.ToLower(originalExt) {
 	case ".png":
 		return png.Encode(out, img)
@@ -309,12 +265,23 @@ func saveImage(img image.Image, savePath string, originalExt string) error {
 	case ".tiff", ".tif":
 		return tiff.Encode(out, img, nil)
 	default:
+		// Default to JPEG for all other formats (including HEIC, HEIF, WebP)
 		opts := &jpeg.Options{Quality: 90}
 		return jpeg.Encode(out, img, opts)
 	}
 }
 
 // Category handlers
+
+// @Summary Create a new category
+// @Description Create a new category with the provided data
+// @Tags categories
+// @Accept json
+// @Produce json
+// @Param category body Category true "Category data"
+// @Success 201 {object} Category
+// @Failure 400 {object} map[string]string
+// @Router /categories [post]
 func createCategory(c *gin.Context) {
 	var category Category
 	if err := c.ShouldBindJSON(&category); err != nil {
@@ -325,12 +292,26 @@ func createCategory(c *gin.Context) {
 	c.JSON(201, category)
 }
 
+// @Summary Get all categories
+// @Description Get a list of all categories
+// @Tags categories
+// @Produce json
+// @Success 200 {array} Category
+// @Router /categories [get]
 func getCategories(c *gin.Context) {
 	var categories []Category
 	db.Find(&categories)
 	c.JSON(200, categories)
 }
 
+// @Summary Get category by ID
+// @Description Get a single category by its ID
+// @Tags categories
+// @Produce json
+// @Param id path string true "Category ID"
+// @Success 200 {object} Category
+// @Failure 404 {object} map[string]string
+// @Router /categories/{id} [get]
 func getCategory(c *gin.Context) {
 	id := c.Param("id")
 	var category Category
@@ -341,6 +322,17 @@ func getCategory(c *gin.Context) {
 	c.JSON(200, category)
 }
 
+// @Summary Update category
+// @Description Update an existing category by ID
+// @Tags categories
+// @Accept json
+// @Produce json
+// @Param id path string true "Category ID"
+// @Param category body Category true "Updated category data"
+// @Success 200 {object} Category
+// @Failure 400 {object} map[string]string
+// @Failure 404 {object} map[string]string
+// @Router /categories/{id} [put]
 func updateCategory(c *gin.Context) {
 	id := c.Param("id")
 	var category Category
@@ -356,6 +348,14 @@ func updateCategory(c *gin.Context) {
 	c.JSON(200, category)
 }
 
+// @Summary Delete category
+// @Description Delete a category by ID
+// @Tags categories
+// @Produce json
+// @Param id path string true "Category ID"
+// @Success 200 {object} map[string]string
+// @Failure 404 {object} map[string]string
+// @Router /categories/{id} [delete]
 func deleteCategory(c *gin.Context) {
 	id := c.Param("id")
 	if err := db.Delete(&Category{}, "id = ?", id).Error; err != nil {
@@ -366,6 +366,16 @@ func deleteCategory(c *gin.Context) {
 }
 
 // Task handlers
+
+// @Summary Create a new task
+// @Description Create a new task with category, name, and optional position
+// @Tags tasks
+// @Accept json
+// @Produce json
+// @Param task body object{category_id=string,name=string,is_success=bool,price=number,position=int} true "Task data"
+// @Success 201 {object} TaskResponse
+// @Failure 400 {object} map[string]string
+// @Router /tasks [post]
 func createTask(c *gin.Context) {
 	var input struct {
 		CategoryID uuid.UUID `json:"category_id"`
@@ -396,11 +406,19 @@ func createTask(c *gin.Context) {
 	}
 
 	db.Create(&task)
+
 	db.Preload("Category").Preload("Items").First(&task, task.ID)
 	response := convertToTaskResponse(task)
+
 	c.JSON(201, response)
 }
 
+// @Summary Get all tasks
+// @Description Get a list of all active tasks ordered by position
+// @Tags tasks
+// @Produce json
+// @Success 200 {array} TaskResponse
+// @Router /tasks [get]
 func getTasks(c *gin.Context) {
 	var tasks []Task
 	db.Preload("Category").Preload("Items").Order("position ASC").Find(&tasks)
@@ -409,9 +427,16 @@ func getTasks(c *gin.Context) {
 	for _, task := range tasks {
 		responses = append(responses, convertToTaskResponse(task))
 	}
+
 	c.JSON(200, responses)
 }
 
+// @Summary Get deleted tasks
+// @Description Get a list of all soft-deleted tasks
+// @Tags tasks
+// @Produce json
+// @Success 200 {array} TaskResponse
+// @Router /tasks/deleted [get]
 func getDeletedTasks(c *gin.Context) {
 	var tasks []Task
 	db.Unscoped().Preload("Category").Preload("Items").Where("deleted_at IS NOT NULL").Order("position ASC").Find(&tasks)
@@ -420,9 +445,18 @@ func getDeletedTasks(c *gin.Context) {
 	for _, task := range tasks {
 		responses = append(responses, convertToTaskResponse(task))
 	}
+
 	c.JSON(200, responses)
 }
 
+// @Summary Get task by ID
+// @Description Get a single task by its ID
+// @Tags tasks
+// @Produce json
+// @Param id path string true "Task ID"
+// @Success 200 {object} TaskResponse
+// @Failure 404 {object} map[string]string
+// @Router /tasks/{id} [get]
 func getTask(c *gin.Context) {
 	id := c.Param("id")
 	var task Task
@@ -430,10 +464,22 @@ func getTask(c *gin.Context) {
 		c.JSON(404, gin.H{"error": "Task not found"})
 		return
 	}
+
 	response := convertToTaskResponse(task)
 	c.JSON(200, response)
 }
 
+// @Summary Update task
+// @Description Update an existing task
+// @Tags tasks
+// @Accept json
+// @Produce json
+// @Param id path string true "Task ID"
+// @Param task body object{category_id=string,name=string,is_success=bool,price=number} true "Updated task data"
+// @Success 200 {object} TaskResponse
+// @Failure 400 {object} map[string]string
+// @Failure 404 {object} map[string]string
+// @Router /tasks/{id} [put]
 func updateTask(c *gin.Context) {
 	id := c.Param("id")
 	var task Task
@@ -458,13 +504,26 @@ func updateTask(c *gin.Context) {
 	task.Name = input.Name
 	task.IsSuccess = input.IsSuccess
 	task.Price = input.Price
+
 	db.Save(&task)
 
 	db.Preload("Category").Preload("Items").First(&task, task.ID)
 	response := convertToTaskResponse(task)
+
 	c.JSON(200, response)
 }
 
+// @Summary Update task position
+// @Description Change the position of a task in the list
+// @Tags tasks
+// @Accept json
+// @Produce json
+// @Param id path string true "Task ID"
+// @Param position body object{position=int} true "New position"
+// @Success 200 {object} TaskResponse
+// @Failure 400 {object} map[string]string
+// @Failure 404 {object} map[string]string
+// @Router /tasks/{id}/position [put]
 func updateTaskPosition(c *gin.Context) {
 	id := c.Param("id")
 	var task Task
@@ -485,21 +544,36 @@ func updateTaskPosition(c *gin.Context) {
 	oldPos := task.Position
 	newPos := input.Position
 
-	if oldPos != newPos {
-		if oldPos < newPos {
-			db.Model(&Task{}).Where("position > ? AND position <= ?", oldPos, newPos).Update("position", gorm.Expr("position - 1"))
-		} else {
-			db.Model(&Task{}).Where("position >= ? AND position < ?", newPos, oldPos).Update("position", gorm.Expr("position + 1"))
-		}
-		task.Position = newPos
-		db.Save(&task)
+	if oldPos == newPos {
+		db.Preload("Category").Preload("Items").First(&task, task.ID)
+		response := convertToTaskResponse(task)
+		c.JSON(200, response)
+		return
 	}
+
+	if oldPos < newPos {
+		db.Model(&Task{}).Where("position > ? AND position <= ?", oldPos, newPos).Update("position", gorm.Expr("position - 1"))
+	} else {
+		db.Model(&Task{}).Where("position >= ? AND position < ?", newPos, oldPos).Update("position", gorm.Expr("position + 1"))
+	}
+
+	task.Position = newPos
+	db.Save(&task)
 
 	db.Preload("Category").Preload("Items").First(&task, task.ID)
 	response := convertToTaskResponse(task)
+
 	c.JSON(200, response)
 }
 
+// @Summary Soft delete task
+// @Description Soft delete a task (can be restored later)
+// @Tags tasks
+// @Produce json
+// @Param id path string true "Task ID"
+// @Success 200 {object} map[string]string
+// @Failure 404 {object} map[string]string
+// @Router /tasks/{id} [delete]
 func deleteTask(c *gin.Context) {
 	id := c.Param("id")
 	var task Task
@@ -510,9 +584,19 @@ func deleteTask(c *gin.Context) {
 
 	db.Delete(&task)
 	db.Model(&Task{}).Where("position > ?", task.Position).Update("position", gorm.Expr("position - 1"))
+
 	c.JSON(200, gin.H{"message": "Task deleted (soft delete)"})
 }
 
+// @Summary Restore deleted task
+// @Description Restore a soft-deleted task
+// @Tags tasks
+// @Produce json
+// @Param id path string true "Task ID"
+// @Success 200 {object} map[string]interface{}
+// @Failure 400 {object} map[string]string
+// @Failure 404 {object} map[string]string
+// @Router /tasks/{id}/restore [put]
 func restoreTask(c *gin.Context) {
 	id := c.Param("id")
 	var task Task
@@ -535,9 +619,18 @@ func restoreTask(c *gin.Context) {
 
 	db.Preload("Category").Preload("Items").First(&task, task.ID)
 	response := convertToTaskResponse(task)
+
 	c.JSON(200, gin.H{"message": "Task restored", "task": response})
 }
 
+// @Summary Permanently delete task
+// @Description Permanently delete a task and all its items
+// @Tags tasks
+// @Produce json
+// @Param id path string true "Task ID"
+// @Success 200 {object} map[string]string
+// @Failure 404 {object} map[string]string
+// @Router /tasks/{id}/permanent [delete]
 func permanentDeleteTask(c *gin.Context) {
 	id := c.Param("id")
 	var task Task
@@ -551,16 +644,26 @@ func permanentDeleteTask(c *gin.Context) {
 	for _, item := range items {
 		if item.Data != "" {
 			oldPath := strings.TrimPrefix(item.Data, "/static/")
-			oldPath = strings.TrimPrefix(oldPath, "/uploads/")
 			os.Remove(filepath.Join("uploads", oldPath))
 		}
 	}
-
 	db.Unscoped().Where("task_id = ?", id).Delete(&TaskItem{})
 	db.Unscoped().Delete(&task)
+
 	c.JSON(200, gin.H{"message": "Task permanently deleted"})
 }
 
+// @Summary Mark task as success
+// @Description Update task success status and price
+// @Tags tasks
+// @Accept json
+// @Produce json
+// @Param id path string true "Task ID"
+// @Param success body object{is_success=bool,price=number} true "Success status and price"
+// @Success 200 {object} TaskResponse
+// @Failure 400 {object} map[string]string
+// @Failure 404 {object} map[string]string
+// @Router /tasks/{id}/success [put]
 func markTaskSuccess(c *gin.Context) {
 	id := c.Param("id")
 	var task Task
@@ -581,14 +684,26 @@ func markTaskSuccess(c *gin.Context) {
 
 	task.IsSuccess = input.IsSuccess
 	task.Price = input.Price
+
 	db.Save(&task)
 
 	db.Preload("Category").Preload("Items").First(&task, task.ID)
 	response := convertToTaskResponse(task)
+
 	c.JSON(200, response)
 }
 
 // TaskItem handlers
+
+// @Summary Create task item
+// @Description Create a new task item
+// @Tags task-items
+// @Accept json
+// @Produce json
+// @Param item body TaskItem true "Task item data"
+// @Success 201 {object} TaskItem
+// @Failure 400 {object} map[string]string
+// @Router /task-items [post]
 func createTaskItem(c *gin.Context) {
 	var item TaskItem
 	if err := c.ShouldBindJSON(&item); err != nil {
@@ -600,12 +715,26 @@ func createTaskItem(c *gin.Context) {
 	c.JSON(201, item)
 }
 
+// @Summary Get all task items
+// @Description Get a list of all task items
+// @Tags task-items
+// @Produce json
+// @Success 200 {array} TaskItem
+// @Router /task-items [get]
 func getTaskItems(c *gin.Context) {
 	var items []TaskItem
 	db.Find(&items)
 	c.JSON(200, items)
 }
 
+// @Summary Get task item by ID
+// @Description Get a single task item by ID
+// @Tags task-items
+// @Produce json
+// @Param id path string true "Task item ID"
+// @Success 200 {object} TaskItem
+// @Failure 404 {object} map[string]string
+// @Router /task-items/{id} [get]
 func getTaskItem(c *gin.Context) {
 	id := c.Param("id")
 	var item TaskItem
@@ -616,6 +745,13 @@ func getTaskItem(c *gin.Context) {
 	c.JSON(200, item)
 }
 
+// @Summary Get task items by task ID
+// @Description Get all items for a specific task
+// @Tags task-items
+// @Produce json
+// @Param id path string true "Task ID"
+// @Success 200 {array} TaskItem
+// @Router /tasks/{id}/items [get]
 func getTaskItemsByTaskID(c *gin.Context) {
 	taskID := c.Param("id")
 	var items []TaskItem
@@ -623,6 +759,17 @@ func getTaskItemsByTaskID(c *gin.Context) {
 	c.JSON(200, items)
 }
 
+// @Summary Update task item
+// @Description Update an existing task item
+// @Tags task-items
+// @Accept json
+// @Produce json
+// @Param id path string true "Task item ID"
+// @Param item body TaskItem true "Updated task item data"
+// @Success 200 {object} TaskItem
+// @Failure 400 {object} map[string]string
+// @Failure 404 {object} map[string]string
+// @Router /task-items/{id} [put]
 func updateTaskItem(c *gin.Context) {
 	id := c.Param("id")
 	var item TaskItem
@@ -638,6 +785,14 @@ func updateTaskItem(c *gin.Context) {
 	c.JSON(200, item)
 }
 
+// @Summary Delete task item
+// @Description Delete a task item and its associated file
+// @Tags task-items
+// @Produce json
+// @Param id path string true "Task item ID"
+// @Success 200 {object} map[string]string
+// @Failure 404 {object} map[string]string
+// @Router /task-items/{id} [delete]
 func deleteTaskItem(c *gin.Context) {
 	id := c.Param("id")
 	var item TaskItem
@@ -648,7 +803,6 @@ func deleteTaskItem(c *gin.Context) {
 
 	if item.Data != "" {
 		oldPath := strings.TrimPrefix(item.Data, "/static/")
-		oldPath = strings.TrimPrefix(oldPath, "/uploads/")
 		os.Remove(filepath.Join("uploads", oldPath))
 	}
 
@@ -656,7 +810,18 @@ func deleteTaskItem(c *gin.Context) {
 	c.JSON(200, gin.H{"message": "Task item deleted"})
 }
 
-// Upload handlers
+// File upload handlers
+
+// @Summary Upload image
+// @Description Upload an image file in any format (JPEG, PNG, GIF, BMP, TIFF, WebP, HEIC, HEIF)
+// @Tags uploads
+// @Accept multipart/form-data
+// @Produce json
+// @Param image formData file true "Image file"
+// @Success 200 {object} UploadResponse
+// @Failure 400 {object} UploadResponse
+// @Failure 500 {object} UploadResponse
+// @Router /upload/image [post]
 func uploadImage(c *gin.Context) {
 	file, handler, err := c.Request.FormFile("image")
 	if err != nil {
@@ -669,19 +834,11 @@ func uploadImage(c *gin.Context) {
 	}
 	defer file.Close()
 
+	// Get original extension
 	originalExt := strings.ToLower(filepath.Ext(handler.Filename))
 
-	// HEIC/HEIF formatlarini qo'llab-quvvatlamaymiz
-	if originalExt == ".heic" || originalExt == ".heif" {
-		c.JSON(400, UploadResponse{
-			Success:    false,
-			StatusCode: 400,
-			Message:    "HEIC/HEIF formatlar qo'llab-quvvatlanmaydi. JPEG, PNG, WebP, GIF, BMP, TIFF formatlaridan foydalaning.",
-		})
-		return
-	}
-
-	img, _, err := decodeImage(file, originalExt)
+	// Decode image
+	img, format, err := decodeImage(file, originalExt)
 	if err != nil {
 		c.JSON(400, UploadResponse{
 			Success:    false,
@@ -691,7 +848,12 @@ func uploadImage(c *gin.Context) {
 		return
 	}
 
+	log.Printf("Image decoded successfully. Format: %s, Original ext: %s", format, originalExt)
+
+	// Generate unique ID
 	fileID := uuid.New().String()
+
+	// Determine save extension (keep original or convert to JPEG)
 	saveExt := originalExt
 	contentType := ""
 
@@ -712,20 +874,28 @@ func uploadImage(c *gin.Context) {
 		saveExt = ".tiff"
 		contentType = "image/tiff"
 	case ".webp":
-		saveExt = ".jpg" // WebP ni JPEG ga o'tkazamiz
+		saveExt = ".jpg" // Convert WebP to JPEG
+		contentType = "image/jpeg"
+	case ".heic", ".heif":
+		saveExt = ".jpg" // Convert HEIC to JPEG
 		contentType = "image/jpeg"
 	default:
-		saveExt = ".jpg"
+		saveExt = ".jpg" // Default to JPEG
 		contentType = "image/jpeg"
 	}
 
+	// Resize image (optional - only if image is too large)
 	bounds := img.Bounds()
 	width := bounds.Dx()
 	if width > 2048 {
 		img = resize.Resize(2048, 0, img, resize.Lanczos3)
+		log.Println("Image resized to 2048px width")
 	}
 
+	// Save path
 	savePath := fmt.Sprintf("uploads/%s%s", fileID, saveExt)
+
+	// Save image
 	err = saveImage(img, savePath, saveExt)
 	if err != nil {
 		c.JSON(500, UploadResponse{
@@ -736,8 +906,19 @@ func uploadImage(c *gin.Context) {
 		return
 	}
 
-	fileInfo, _ := os.Stat(savePath)
+	// Get file size
+	fileInfo, err := os.Stat(savePath)
+	if err != nil {
+		c.JSON(500, UploadResponse{
+			Success:    false,
+			StatusCode: 500,
+			Message:    "Fayl ma'lumotlarini olishda xatolik: " + err.Error(),
+		})
+		return
+	}
 	fileSize := fileInfo.Size()
+
+	// Generate URL
 	imageURL := fmt.Sprintf("/uploads/%s%s", fileID, saveExt)
 
 	c.JSON(200, UploadResponse{
@@ -755,6 +936,16 @@ func uploadImage(c *gin.Context) {
 	})
 }
 
+// @Summary Upload audio
+// @Description Upload an audio file in any format
+// @Tags uploads
+// @Accept multipart/form-data
+// @Produce json
+// @Param audio formData file true "Audio file"
+// @Success 200 {object} UploadResponse
+// @Failure 400 {object} UploadResponse
+// @Failure 500 {object} UploadResponse
+// @Router /upload/audio [post]
 func uploadAudio(c *gin.Context) {
 	file, handler, err := c.Request.FormFile("audio")
 	if err != nil {
@@ -767,13 +958,18 @@ func uploadAudio(c *gin.Context) {
 	}
 	defer file.Close()
 
+	// Generate unique ID
 	fileID := uuid.New().String()
 	ext := strings.ToLower(filepath.Ext(handler.Filename))
+
+	// If no extension, default to .mp3
 	if ext == "" {
 		ext = ".mp3"
 	}
 
 	savePath := fmt.Sprintf("uploads/%s%s", fileID, ext)
+
+	// Save file
 	if err := c.SaveUploadedFile(handler, savePath); err != nil {
 		c.JSON(500, UploadResponse{
 			Success:    false,
@@ -783,10 +979,21 @@ func uploadAudio(c *gin.Context) {
 		return
 	}
 
-	fileInfo, _ := os.Stat(savePath)
+	// Get file size
+	fileInfo, err := os.Stat(savePath)
+	if err != nil {
+		c.JSON(500, UploadResponse{
+			Success:    false,
+			StatusCode: 500,
+			Message:    "Fayl ma'lumotlarini olishda xatolik: " + err.Error(),
+		})
+		return
+	}
 	fileSize := fileInfo.Size()
-	audioURL := fmt.Sprintf("/uploads/%s%s", fileID, ext)
 
+	audioURL := fmt.Sprintf("http://31.187.74.228:1212/test/uploads/%s%s", fileID, ext)
+
+	// Determine content type based on extension
 	contentType := "audio/mpeg"
 	switch ext {
 	case ".mp3":
@@ -801,6 +1008,10 @@ func uploadAudio(c *gin.Context) {
 		contentType = "audio/aac"
 	case ".flac":
 		contentType = "audio/flac"
+	case ".wma":
+		contentType = "audio/x-ms-wma"
+	default:
+		contentType = "audio/mpeg"
 	}
 
 	c.JSON(200, UploadResponse{
@@ -818,6 +1029,16 @@ func uploadAudio(c *gin.Context) {
 	})
 }
 
+// @Summary Upload video
+// @Description Upload a video file in any format
+// @Tags uploads
+// @Accept multipart/form-data
+// @Produce json
+// @Param video formData file true "Video file"
+// @Success 200 {object} UploadResponse
+// @Failure 400 {object} UploadResponse
+// @Failure 500 {object} UploadResponse
+// @Router /upload/video [post]
 func uploadVideo(c *gin.Context) {
 	file, handler, err := c.Request.FormFile("video")
 	if err != nil {
@@ -830,13 +1051,18 @@ func uploadVideo(c *gin.Context) {
 	}
 	defer file.Close()
 
+	// Generate unique ID
 	fileID := uuid.New().String()
 	ext := strings.ToLower(filepath.Ext(handler.Filename))
+
+	// If no extension, default to .mp4
 	if ext == "" {
 		ext = ".mp4"
 	}
 
 	savePath := fmt.Sprintf("uploads/%s%s", fileID, ext)
+
+	// Save file
 	if err := c.SaveUploadedFile(handler, savePath); err != nil {
 		c.JSON(500, UploadResponse{
 			Success:    false,
@@ -846,10 +1072,21 @@ func uploadVideo(c *gin.Context) {
 		return
 	}
 
-	fileInfo, _ := os.Stat(savePath)
+	// Get file size
+	fileInfo, err := os.Stat(savePath)
+	if err != nil {
+		c.JSON(500, UploadResponse{
+			Success:    false,
+			StatusCode: 500,
+			Message:    "Fayl ma'lumotlarini olishda xatolik: " + err.Error(),
+		})
+		return
+	}
 	fileSize := fileInfo.Size()
-	videoURL := fmt.Sprintf("/uploads/%s%s", fileID, ext)
 
+	videoURL := fmt.Sprintf("http://31.187.74.228:1212/test/uploads/%s%s", fileID, ext)
+
+	// Determine content type based on extension
 	contentType := "video/mp4"
 	switch ext {
 	case ".mp4":
@@ -862,6 +1099,14 @@ func uploadVideo(c *gin.Context) {
 		contentType = "video/webm"
 	case ".mkv":
 		contentType = "video/x-matroska"
+	case ".flv":
+		contentType = "video/x-flv"
+	case ".wmv":
+		contentType = "video/x-ms-wmv"
+	case ".m4v":
+		contentType = "video/x-m4v"
+	default:
+		contentType = "video/mp4"
 	}
 
 	c.JSON(200, UploadResponse{
