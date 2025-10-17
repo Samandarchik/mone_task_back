@@ -1,29 +1,55 @@
-version: "3.9"
+version: '3.8'
 
 services:
-  db:
-    image: postgres:15
-    container_name: taskdb
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: taskmanager_postgres
     environment:
       POSTGRES_USER: postgres
       POSTGRES_PASSWORD: password
       POSTGRES_DB: taskdb
-    volumes:
-      - pgdata:/var/lib/postgresql/data
+      POSTGRES_INITDB_ARGS: "--encoding=UTF8"
     ports:
       - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - taskmanager_network
 
-  app:
-    build: .
-    container_name: taskmanager
+  # Task Manager API
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: taskmanager_api
+    environment:
+      DB_HOST: postgres
+      DB_USER: postgres
+      DB_PASSWORD: password
+      DB_NAME: taskdb
+      DB_PORT: 5432
+      API_PORT: 1212
     ports:
       - "1212:1212"
-    environment:
-      - DSN=host=db user=postgres password=password dbname=taskdb port=5432 sslmode=disable
-    volumes:
-      - ./uploads:/root/uploads
     depends_on:
-      - db
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./uploads:/app/uploads
+      - ./docs:/app/docs
+    networks:
+      - taskmanager_network
+    restart: unless-stopped
 
 volumes:
-  pgdata:
+  postgres_data:
+
+networks:
+  taskmanager_network:
+    driver: bridge

@@ -1,34 +1,38 @@
-# Build bosqichi
-FROM golang:1.24.2 AS builder
+# Build stage
+FROM golang:1.24-alpine AS builder
 
 WORKDIR /app
 
+# Install required dependencies
+RUN apk add --no-cache git gcc g++ musl-dev
+
+# Copy go mod files
 COPY go.mod go.sum ./
+
+# Download dependencies
 RUN go mod download
 
+# Copy source code
 COPY . .
 
-# CGO kerak bo‘lgani uchun system kutubxonalarni o‘rnatamiz
-RUN apt-get update && apt-get install -y \
-    build-essential \
-    pkg-config \
-    libde265-dev \
-    libheif-dev
+# Build application (CGO enabled)
+RUN CGO_ENABLED=1 GOOS=linux go build -a -installsuffix cgo -o main .
 
-# CGO yoqilgan holda build
-RUN CGO_ENABLED=1 GOOS=linux go build -o taskmanager .
+# Final stage
+FROM alpine:latest
 
-# Minimal image
-FROM debian:bookworm-slim
-RUN apt-get update && apt-get install -y \
-    libde265-dev libheif-dev tzdata ca-certificates && rm -rf /var/lib/apt/lists/*
+RUN apk --no-cache add ca-certificates
 
-WORKDIR /root/
-COPY --from=builder /app/taskmanager .
-COPY --from=builder /app/uploads ./uploads
+WORKDIR /app
 
+# Copy binary from builder
+COPY --from=builder /app/main .
+
+# Create uploads directory
+RUN mkdir -p uploads
+
+# Expose port
 EXPOSE 1212
 
-ENV DSN="host=postgres user=postgres password=password dbname=taskdb port=5432 sslmode=disable"
-
-CMD ["./taskmanager"]
+# Run application
+CMD ["./main"]
