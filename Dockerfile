@@ -15,7 +15,7 @@ RUN go mod download
 # Copy source code
 COPY . .
 
-# Build application (CGO enabled)
+# Build application
 RUN CGO_ENABLED=1 GOOS=linux go build -a -installsuffix cgo -o main .
 
 # Final stage

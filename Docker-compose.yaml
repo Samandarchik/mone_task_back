@@ -35,8 +35,9 @@ services:
       DB_NAME: taskdb
       DB_PORT: 5432
       API_PORT: 1212
+      GIN_MODE: release
     ports:
-      - "1212:1212"
+      - "127.0.0.1:1212:1212"
     depends_on:
       postgres:
         condition: service_healthy
