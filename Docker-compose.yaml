@@ -1,56 +1,121 @@
-version: '3.8'
 
 services:
   # PostgreSQL Database
   postgres:
     image: postgres:15-alpine
-    container_name: taskmanager_postgres
+    container_name: taskmanager_db
+    restart: unless-stopped
     environment:
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: password
-      POSTGRES_DB: taskdb
-      POSTGRES_INITDB_ARGS: "--encoding=UTF8"
-    ports:
-      - "5432:5432"
+      POSTGRES_USER: ${DB_USER:-postgres}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-password}
+      POSTGRES_DB: ${DB_NAME:-taskdb}
+      PGDATA: /var/lib/postgresql/data/pgdata
     volumes:
       - postgres_data:/var/lib/postgresql/data
+      - ./init.sql:/docker-entrypoint-initdb.d/init.sql:ro
+    ports:
+      - "${DB_PORT:-5432}:5432"
+    networks:
+      - taskmanager_network
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-postgres} -d ${DB_NAME:-taskdb}"]
       interval: 10s
       timeout: 5s
       retries: 5
-    networks:
-      - taskmanager_network
+      start_period: 10s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
-  # Task Manager API
-  api:
+  # Task Manager API Application
+  app:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: taskmanager_api
+      args:
+        - GO_VERSION=1.21
+    image: taskmanager:latest
+    container_name: taskmanager_app
+    restart: unless-stopped
     environment:
+      # Database configuration
       DB_HOST: postgres
-      DB_USER: postgres
-      DB_PASSWORD: password
-      DB_NAME: taskdb
+      DB_USER: ${DB_USER:-postgres}
+      DB_PASSWORD: ${DB_PASSWORD:-password}
+      DB_NAME: ${DB_NAME:-taskdb}
       DB_PORT: 5432
-      API_PORT: 1212
-      GIN_MODE: release
+      
+      # Server configuration
+      SERVER_PORT: ${SERVER_PORT:-1212}
+      BASE_URL: ${BASE_URL:-http://localhost:1212}
+      
+      # Gin mode
+      GIN_MODE: ${GIN_MODE:-release}
+      
+      # Timezone
+      TZ: Asia/Tashkent
     ports:
-      - "127.0.0.1:1212:1212"
+      - "${SERVER_PORT:-1212}:1212"
+    volumes:
+      - ./uploads:/home/appuser/app/uploads
+      - ./logs:/home/appuser/app/logs
     depends_on:
       postgres:
         condition: service_healthy
-    volumes:
-      - ./uploads:/app/uploads
-      - ./docs:/app/docs
     networks:
       - taskmanager_network
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:1212/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # pgAdmin (Optional - for database management)
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: taskmanager_pgadmin
     restart: unless-stopped
+    environment:
+      PGADMIN_DEFAULT_EMAIL: ${PGADMIN_EMAIL:-admin@admin.com}
+      PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_PASSWORD:-admin}
+      PGADMIN_CONFIG_SERVER_MODE: 'False'
+    ports:
+      - "${PGADMIN_PORT:-5050}:80"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    depends_on:
+      - postgres
+    networks:
+      - taskmanager_network
+    profiles:
+      - tools
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
 
 volumes:
   postgres_data:
+    driver: local
+    name: taskmanager_postgres_data
+  
+  pgadmin_data:
+    driver: local
+    name: taskmanager_pgadmin_data
 
 networks:
   taskmanager_network:
     driver: bridge
+    name: taskmanager_network
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16
