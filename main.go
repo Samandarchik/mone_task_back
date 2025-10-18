@@ -16,7 +16,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/adrium/goheif"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/nfnt/resize"
@@ -123,7 +122,7 @@ type UploadResponse struct {
 var (
 	db       Database
 	dbMutex  sync.RWMutex
-	dataFile = "database.json"
+	dataFile = "data/database.json"
 )
 
 // Database operations
@@ -194,7 +193,7 @@ func findTaskItemByID(id string) *TaskItem {
 	return nil
 }
 
-func getItemsForTask(taskID string) []TaskItem {
+func getTaskItemsByID(taskID string) []TaskItem {
 	var items []TaskItem
 	for _, item := range db.TaskItems {
 		if item.TaskID == taskID {
@@ -254,7 +253,7 @@ func convertToTaskResponse(task Task) TaskResponse {
 	}
 
 	// Add items with position
-	items := getItemsForTask(task.ID)
+	items := getTaskItemsByID(task.ID)
 	for i, item := range items {
 		itemResp := TaskItemResponse{
 			ID:       item.ID,
@@ -273,14 +272,12 @@ func convertToTaskResponse(task Task) TaskResponse {
 func decodeImage(file multipart.File, ext string) (image.Image, string, error) {
 	file.Seek(0, 0)
 
+	// HEIC/HEIF not supported in this version
 	if ext == ".heic" || ext == ".heif" {
-		img, err := goheif.Decode(file)
-		if err != nil {
-			return nil, "", fmt.Errorf("HEIC decode error: %v", err)
-		}
-		return img, "heic", nil
+		return nil, "", fmt.Errorf("HEIC/HEIF format is not supported. Please convert to JPG/PNG")
 	}
 
+	// Try WebP
 	if ext == ".webp" {
 		img, err := webp.Decode(file)
 		if err == nil {
@@ -288,6 +285,7 @@ func decodeImage(file multipart.File, ext string) (image.Image, string, error) {
 		}
 	}
 
+	// Try BMP
 	if ext == ".bmp" {
 		img, err := bmp.Decode(file)
 		if err == nil {
@@ -295,6 +293,7 @@ func decodeImage(file multipart.File, ext string) (image.Image, string, error) {
 		}
 	}
 
+	// Try TIFF
 	if ext == ".tiff" || ext == ".tif" {
 		img, err := tiff.Decode(file)
 		if err == nil {
@@ -302,6 +301,7 @@ func decodeImage(file multipart.File, ext string) (image.Image, string, error) {
 		}
 	}
 
+	// Try standard image formats (JPEG, PNG, GIF)
 	file.Seek(0, 0)
 	img, format, err := image.Decode(file)
 	if err != nil {
@@ -827,7 +827,7 @@ func permanentDeleteTask(c *gin.Context) {
 	}
 
 	// Delete files
-	items := getItemsForTask(id)
+	items := getTaskItemsByID(id)
 	for _, item := range items {
 		if item.Data != "" {
 			oldPath := strings.TrimPrefix(item.Data, "/static/")
@@ -979,7 +979,7 @@ func getTaskItemsByTaskID(c *gin.Context) {
 	dbMutex.RLock()
 	defer dbMutex.RUnlock()
 
-	items := getItemsForTask(taskID)
+	items := getTaskItemsByID(taskID)
 	c.JSON(200, items)
 }
 
@@ -1054,7 +1054,7 @@ func deleteTaskItem(c *gin.Context) {
 // File upload handlers
 
 // @Summary Upload image
-// @Description Upload an image file in any format (JPEG, PNG, GIF, BMP, TIFF, WebP, HEIC, HEIF)
+// @Description Upload an image file (JPEG, PNG, GIF, BMP, TIFF, WebP). HEIC/HEIF not supported.
 // @Tags uploads
 // @Accept multipart/form-data
 // @Produce json
