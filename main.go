@@ -1,19 +1,16 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
 	"image"
 	"image/gif"
 	"image/jpeg"
 	"image/png"
-	"io/ioutil"
 	"log"
 	"mime/multipart"
 	"os"
 	"path/filepath"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -25,12 +22,15 @@ import (
 	"golang.org/x/image/tiff"
 	"golang.org/x/image/webp"
 
-	_ "taskmanager/docs"
+	"gorm.io/driver/postgres"
+	"gorm.io/gorm"
+
+	_ "taskmanager/docs" // Swagger docs import
 )
 
 // @title Task Management API
 // @version 1.0
-// @description Task Management API with Categories, Tasks and Task Items (JSON Storage)
+// @description Task Management API with Categories, Tasks and Task Items
 // @termsOfService http://swagger.io/terms/
 
 // @contact.name API Support
@@ -46,53 +46,44 @@ import (
 
 // Models
 type Category struct {
-	ID   string `json:"id"`
-	Data string `json:"data"`
+	ID   uuid.UUID `gorm:"type:uuid;primary_key;default:gen_random_uuid()" json:"id" example:"550e8400-e29b-41d4-a716-446655440000"`
+	Data string    `json:"data" example:"Work"`
 }
 
 type Task struct {
-	ID         string     `json:"id"`
-	CategoryID string     `json:"category_id"`
-	Name       string     `json:"name"`
-	IsSuccess  bool       `json:"is_success"`
-	Price      *float32   `json:"price"`
-	Position   int        `json:"position"`
-	DeletedAt  *time.Time `json:"deleted_at,omitempty"`
-	Category   *Category  `json:"category,omitempty"`
-	Items      []TaskItem `json:"items,omitempty"`
+	ID         uuid.UUID      `gorm:"type:uuid;primary_key;default:gen_random_uuid()" json:"id" example:"550e8400-e29b-41d4-a716-446655440001"`
+	CategoryID uuid.UUID      `gorm:"type:uuid" json:"category_id" example:"550e8400-e29b-41d4-a716-446655440000"`
+	Name       string         `json:"name" example:"Complete project"`
+	IsSuccess  bool           `gorm:"default:false" json:"is_success" example:"false"`
+	Price      *float32       `json:"price" example:"100.50"`
+	Position   int            `json:"position" example:"1"`
+	DeletedAt  gorm.DeletedAt `gorm:"index" json:"deleted_at,omitempty"`
+	Category   Category       `gorm:"foreignKey:CategoryID" json:"category"`
+	Items      []TaskItem     `gorm:"foreignKey:TaskID" json:"items"`
 }
 
 type TaskItem struct {
-	ID       string    `json:"id"`
-	TaskID   string    `json:"task_id"`
-	Type     string    `json:"type"`
-	Data     string    `json:"data"`
-	Time     time.Time `json:"time"`
-	Position int       `json:"position"`
-}
-
-// Database structure
-type Database struct {
-	Categories []Category `json:"categories"`
-	Tasks      []Task     `json:"tasks"`
-	TaskItems  []TaskItem `json:"task_items"`
+	ID     uuid.UUID `gorm:"type:uuid;primary_key;default:gen_random_uuid()" json:"id" example:"550e8400-e29b-41d4-a716-446655440002"`
+	TaskID uuid.UUID `gorm:"type:uuid" json:"task_id" example:"550e8400-e29b-41d4-a716-446655440001"`
+	Type   string    `json:"type" example:"image"`
+	Data   string    `json:"data" example:"/static/image.jpg"`
+	Time   time.Time `json:"time" example:"2025-10-17T12:00:00Z"`
 }
 
 // Response structures
 type TaskItemResponse struct {
-	ID       string `json:"id"`
-	Type     string `json:"type"`
-	Position int    `json:"position"`
-	Data     struct {
-		ID   string    `json:"id"`
+	ID   uuid.UUID `json:"id"`
+	Type string    `json:"type"`
+	Data struct {
+		ID   uuid.UUID `json:"id"`
 		Data string    `json:"data"`
 		Time time.Time `json:"time"`
 	} `json:"data"`
 }
 
 type TaskResponse struct {
-	ID         string             `json:"id"`
-	CategoryID string             `json:"category_id"`
+	ID         uuid.UUID          `json:"id"`
+	CategoryID uuid.UUID          `json:"category_id"`
 	Name       string             `json:"name"`
 	IsSuccess  bool               `json:"is_success"`
 	Price      *float32           `json:"price"`
@@ -102,6 +93,7 @@ type TaskResponse struct {
 	TaskName   []TaskItemResponse `json:"task_name"`
 }
 
+// Upload response structures
 type UploadData struct {
 	ID          string `json:"id"`
 	Size        int64  `json:"size"`
@@ -118,121 +110,63 @@ type UploadResponse struct {
 	Data       UploadData `json:"data"`
 }
 
-// Global variables
-var (
-	db       Database
-	dbMutex  sync.RWMutex
-	dataFile = "database.json"
-)
+var db *gorm.DB
 
-// Database operations
-func loadDatabase() error {
-	dbMutex.Lock()
-	defer dbMutex.Unlock()
-
-	data, err := ioutil.ReadFile(dataFile)
+func main() {
+	dsn := "host=localhost user=postgres password=password dbname=taskdb port=5432 sslmode=disable"
+	var err error
+	db, err = gorm.Open(postgres.Open(dsn), &gorm.Config{})
 	if err != nil {
-		if os.IsNotExist(err) {
-			db = Database{
-				Categories: []Category{},
-				Tasks:      []Task{},
-				TaskItems:  []TaskItem{},
-			}
-			return saveDatabase()
-		}
-		return err
+		panic("failed to connect database")
 	}
 
-	return json.Unmarshal(data, &db)
+	db.AutoMigrate(&Category{}, &Task{}, &TaskItem{})
+
+	r := gin.Default()
+	r.Static("/static", "./uploads")
+	os.MkdirAll("uploads", os.ModePerm)
+
+	// Swagger documentation route
+	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
+
+	// Category routes
+	r.POST("/categories", createCategory)
+	r.GET("/categories", getCategories)
+	r.GET("/categories/:id", getCategory)
+	r.PUT("/categories/:id", updateCategory)
+	r.DELETE("/categories/:id", deleteCategory)
+
+	// Task routes
+	r.POST("/tasks", createTask)
+	r.GET("/tasks", getTasks)
+	r.GET("/tasks/deleted", getDeletedTasks)
+	r.GET("/tasks/:id", getTask)
+	r.PUT("/tasks/:id", updateTask)
+	r.PUT("/tasks/:id/position", updateTaskPosition)
+	r.DELETE("/tasks/:id", deleteTask)
+	r.PUT("/tasks/:id/restore", restoreTask)
+	r.DELETE("/tasks/:id/permanent", permanentDeleteTask)
+	r.PUT("/tasks/:id/success", markTaskSuccess)
+
+	// Task Item routes
+	r.POST("/task-items", createTaskItem)
+	r.GET("/task-items", getTaskItems)
+	r.GET("/task-items/:id", getTaskItem)
+	r.GET("/tasks/:id/items", getTaskItemsByTaskID)
+	r.PUT("/task-items/:id", updateTaskItem)
+	r.DELETE("/task-items/:id", deleteTaskItem)
+
+	// File upload routes
+	r.POST("/upload/image", uploadImage)
+	r.POST("/upload/audio", uploadAudio)
+	r.POST("/upload/video", uploadVideo)
+
+	log.Println("Server running on :1212")
+	log.Println("Swagger documentation available at http://localhost:1212/swagger/index.html")
+	r.Run(":1212")
 }
 
-func saveDatabase() error {
-	data, err := json.MarshalIndent(db, "", "  ")
-	if err != nil {
-		return err
-	}
-	return ioutil.WriteFile(dataFile, data, 0644)
-}
-
-func saveDatabaseAsync() {
-	go func() {
-		dbMutex.Lock()
-		defer dbMutex.Unlock()
-		saveDatabase()
-	}()
-}
-
-// Helper functions
-func findCategoryByID(id string) *Category {
-	for i := range db.Categories {
-		if db.Categories[i].ID == id {
-			return &db.Categories[i]
-		}
-	}
-	return nil
-}
-
-func findTaskByID(id string, includeDeleted bool) *Task {
-	for i := range db.Tasks {
-		if db.Tasks[i].ID == id {
-			if !includeDeleted && db.Tasks[i].DeletedAt != nil {
-				return nil
-			}
-			return &db.Tasks[i]
-		}
-	}
-	return nil
-}
-
-func findTaskItemByID(id string) *TaskItem {
-	for i := range db.TaskItems {
-		if db.TaskItems[i].ID == id {
-			return &db.TaskItems[i]
-		}
-	}
-	return nil
-}
-
-func getTaskItemsByID(taskID string) []TaskItem {
-	var items []TaskItem
-	for _, item := range db.TaskItems {
-		if item.TaskID == taskID {
-			items = append(items, item)
-		}
-	}
-	return items
-}
-
-func deleteCategoryByID(id string) bool {
-	for i := range db.Categories {
-		if db.Categories[i].ID == id {
-			db.Categories = append(db.Categories[:i], db.Categories[i+1:]...)
-			return true
-		}
-	}
-	return false
-}
-
-func deleteTaskByID(id string) bool {
-	for i := range db.Tasks {
-		if db.Tasks[i].ID == id {
-			db.Tasks = append(db.Tasks[:i], db.Tasks[i+1:]...)
-			return true
-		}
-	}
-	return false
-}
-
-func deleteTaskItemByID(id string) bool {
-	for i := range db.TaskItems {
-		if db.TaskItems[i].ID == id {
-			db.TaskItems = append(db.TaskItems[:i], db.TaskItems[i+1:]...)
-			return true
-		}
-	}
-	return false
-}
-
+// Helper function to convert Task to TaskResponse
 func convertToTaskResponse(task Task) TaskResponse {
 	response := TaskResponse{
 		ID:         task.ID,
@@ -241,24 +175,19 @@ func convertToTaskResponse(task Task) TaskResponse {
 		IsSuccess:  task.IsSuccess,
 		Price:      task.Price,
 		Position:   task.Position,
-		DeletedAt:  task.DeletedAt,
-		Category:   []Category{},
+		Category:   []Category{task.Category},
 		TaskName:   []TaskItemResponse{},
 	}
 
-	// Add category
-	cat := findCategoryByID(task.CategoryID)
-	if cat != nil {
-		response.Category = append(response.Category, *cat)
+	if !task.DeletedAt.Time.IsZero() {
+		deletedTime := task.DeletedAt.Time
+		response.DeletedAt = &deletedTime
 	}
 
-	// Add items with position
-	items := getTaskItemsByID(task.ID)
-	for i, item := range items {
+	for _, item := range task.Items {
 		itemResp := TaskItemResponse{
-			ID:       item.ID,
-			Type:     item.Type,
-			Position: i + 1, // Auto position based on order
+			ID:   item.ID,
+			Type: item.Type,
 		}
 		itemResp.Data.ID = item.ID
 		itemResp.Data.Data = item.Data
@@ -269,13 +198,9 @@ func convertToTaskResponse(task Task) TaskResponse {
 	return response
 }
 
+// Helper function to decode any image format
 func decodeImage(file multipart.File, ext string) (image.Image, string, error) {
 	file.Seek(0, 0)
-
-	// HEIC/HEIF not supported in this version
-	if ext == ".heic" || ext == ".heif" {
-		return nil, "", fmt.Errorf("HEIC/HEIF format is not supported. Please convert to JPG/PNG")
-	}
 
 	// Try WebP
 	if ext == ".webp" {
@@ -311,6 +236,7 @@ func decodeImage(file multipart.File, ext string) (image.Image, string, error) {
 	return img, format, nil
 }
 
+// Helper function to save image in original format or convert to JPEG
 func saveImage(img image.Image, savePath string, originalExt string) error {
 	out, err := os.Create(savePath)
 	if err != nil {
@@ -318,6 +244,7 @@ func saveImage(img image.Image, savePath string, originalExt string) error {
 	}
 	defer out.Close()
 
+	// Determine save format based on extension
 	switch strings.ToLower(originalExt) {
 	case ".png":
 		return png.Encode(out, img)
@@ -328,62 +255,10 @@ func saveImage(img image.Image, savePath string, originalExt string) error {
 	case ".tiff", ".tif":
 		return tiff.Encode(out, img, nil)
 	default:
+		// Default to JPEG for all other formats (including WebP)
 		opts := &jpeg.Options{Quality: 90}
 		return jpeg.Encode(out, img, opts)
 	}
-}
-
-func main() {
-	// Load database
-	if err := loadDatabase(); err != nil {
-		log.Fatal("Database yuklashda xatolik:", err)
-	}
-	log.Println("✓ Database muvaffaqiyatli yuklandi")
-
-	// Create uploads directory
-	os.MkdirAll("uploads", os.ModePerm)
-
-	r := gin.Default()
-	r.Static("/static", "./uploads")
-
-	// Swagger
-	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
-
-	// Category routes
-	r.POST("/categories", createCategory)
-	r.GET("/categories", getCategories)
-	r.GET("/categories/:id", getCategory)
-	r.PUT("/categories/:id", updateCategory)
-	r.DELETE("/categories/:id", deleteCategory)
-
-	// Task routes
-	r.POST("/tasks", createTask)
-	r.GET("/tasks", getTasks)
-	r.GET("/tasks/deleted", getDeletedTasks)
-	r.GET("/tasks/:id", getTask)
-	r.PUT("/tasks/:id", updateTask)
-	r.PUT("/tasks/:id/position", updateTaskPosition)
-	r.DELETE("/tasks/:id", deleteTask)
-	r.PUT("/tasks/:id/restore", restoreTask)
-	r.DELETE("/tasks/:id/permanent", permanentDeleteTask)
-	r.PUT("/tasks/:id/success", markTaskSuccess)
-
-	// Task Item routes
-	r.POST("/task-items", createTaskItem)
-	r.GET("/task-items", getTaskItems)
-	r.GET("/task-items/:id", getTaskItem)
-	r.GET("/tasks/:id/items", getTaskItemsByTaskID)
-	r.PUT("/task-items/:id", updateTaskItem)
-	r.DELETE("/task-items/:id", deleteTaskItem)
-
-	// File upload routes
-	r.POST("/upload/image", uploadImage)
-	r.POST("/upload/audio", uploadAudio)
-	r.POST("/upload/video", uploadVideo)
-
-	log.Println("🚀 Server running on :1212")
-	log.Println("📚 Swagger: http://localhost:1212/swagger/index.html")
-	r.Run(":1212")
 }
 
 // Category handlers
@@ -403,13 +278,7 @@ func createCategory(c *gin.Context) {
 		c.JSON(400, gin.H{"error": err.Error()})
 		return
 	}
-
-	dbMutex.Lock()
-	category.ID = uuid.New().String()
-	db.Categories = append(db.Categories, category)
-	saveDatabase()
-	dbMutex.Unlock()
-
+	db.Create(&category)
 	c.JSON(201, category)
 }
 
@@ -420,9 +289,9 @@ func createCategory(c *gin.Context) {
 // @Success 200 {array} Category
 // @Router /categories [get]
 func getCategories(c *gin.Context) {
-	dbMutex.RLock()
-	defer dbMutex.RUnlock()
-	c.JSON(200, db.Categories)
+	var categories []Category
+	db.Find(&categories)
+	c.JSON(200, categories)
 }
 
 // @Summary Get category by ID
@@ -435,15 +304,12 @@ func getCategories(c *gin.Context) {
 // @Router /categories/{id} [get]
 func getCategory(c *gin.Context) {
 	id := c.Param("id")
-	dbMutex.RLock()
-	defer dbMutex.RUnlock()
-
-	cat := findCategoryByID(id)
-	if cat == nil {
+	var category Category
+	if err := db.First(&category, "id = ?", id).Error; err != nil {
 		c.JSON(404, gin.H{"error": "Category not found"})
 		return
 	}
-	c.JSON(200, cat)
+	c.JSON(200, category)
 }
 
 // @Summary Update category
@@ -459,26 +325,17 @@ func getCategory(c *gin.Context) {
 // @Router /categories/{id} [put]
 func updateCategory(c *gin.Context) {
 	id := c.Param("id")
-
-	var input Category
-	if err := c.ShouldBindJSON(&input); err != nil {
-		c.JSON(400, gin.H{"error": err.Error()})
-		return
-	}
-
-	dbMutex.Lock()
-	defer dbMutex.Unlock()
-
-	cat := findCategoryByID(id)
-	if cat == nil {
+	var category Category
+	if err := db.First(&category, "id = ?", id).Error; err != nil {
 		c.JSON(404, gin.H{"error": "Category not found"})
 		return
 	}
-
-	cat.Data = input.Data
-	saveDatabase()
-
-	c.JSON(200, cat)
+	if err := c.ShouldBindJSON(&category); err != nil {
+		c.JSON(400, gin.H{"error": err.Error()})
+		return
+	}
+	db.Save(&category)
+	c.JSON(200, category)
 }
 
 // @Summary Delete category
@@ -491,16 +348,10 @@ func updateCategory(c *gin.Context) {
 // @Router /categories/{id} [delete]
 func deleteCategory(c *gin.Context) {
 	id := c.Param("id")
-
-	dbMutex.Lock()
-	defer dbMutex.Unlock()
-
-	if !deleteCategoryByID(id) {
+	if err := db.Delete(&Category{}, "id = ?", id).Error; err != nil {
 		c.JSON(404, gin.H{"error": "Category not found"})
 		return
 	}
-
-	saveDatabase()
 	c.JSON(200, gin.H{"message": "Category deleted"})
 }
 
@@ -517,11 +368,11 @@ func deleteCategory(c *gin.Context) {
 // @Router /tasks [post]
 func createTask(c *gin.Context) {
 	var input struct {
-		CategoryID string   `json:"category_id"`
-		Name       string   `json:"name"`
-		IsSuccess  bool     `json:"is_success"`
-		Price      *float32 `json:"price"`
-		Position   *int     `json:"position"`
+		CategoryID uuid.UUID `json:"category_id"`
+		Name       string    `json:"name"`
+		IsSuccess  bool      `json:"is_success"`
+		Price      *float32  `json:"price"`
+		Position   *int      `json:"position"`
 	}
 
 	if err := c.ShouldBindJSON(&input); err != nil {
@@ -529,38 +380,26 @@ func createTask(c *gin.Context) {
 		return
 	}
 
-	dbMutex.Lock()
-	defer dbMutex.Unlock()
-
-	task := Task{
-		ID:         uuid.New().String(),
-		CategoryID: input.CategoryID,
-		Name:       input.Name,
-		IsSuccess:  input.IsSuccess,
-		Price:      input.Price,
-	}
+	var task Task
+	task.CategoryID = input.CategoryID
+	task.Name = input.Name
+	task.IsSuccess = input.IsSuccess
+	task.Price = input.Price
 
 	if input.Position == nil {
-		maxPos := -1
-		for _, t := range db.Tasks {
-			if t.DeletedAt == nil && t.Position > maxPos {
-				maxPos = t.Position
-			}
-		}
+		var maxPos int
+		db.Model(&Task{}).Select("COALESCE(MAX(position), -1)").Scan(&maxPos)
 		task.Position = maxPos + 1
 	} else {
 		task.Position = *input.Position
-		for i := range db.Tasks {
-			if db.Tasks[i].DeletedAt == nil && db.Tasks[i].Position >= *input.Position {
-				db.Tasks[i].Position++
-			}
-		}
+		db.Model(&Task{}).Where("position >= ?", *input.Position).Update("position", gorm.Expr("position + 1"))
 	}
 
-	db.Tasks = append(db.Tasks, task)
-	saveDatabase()
+	db.Create(&task)
 
+	db.Preload("Category").Preload("Items").First(&task, task.ID)
 	response := convertToTaskResponse(task)
+
 	c.JSON(201, response)
 }
 
@@ -571,14 +410,12 @@ func createTask(c *gin.Context) {
 // @Success 200 {array} TaskResponse
 // @Router /tasks [get]
 func getTasks(c *gin.Context) {
-	dbMutex.RLock()
-	defer dbMutex.RUnlock()
+	var tasks []Task
+	db.Preload("Category").Preload("Items").Order("position ASC").Find(&tasks)
 
 	var responses []TaskResponse
-	for _, task := range db.Tasks {
-		if task.DeletedAt == nil {
-			responses = append(responses, convertToTaskResponse(task))
-		}
+	for _, task := range tasks {
+		responses = append(responses, convertToTaskResponse(task))
 	}
 
 	c.JSON(200, responses)
@@ -591,14 +428,12 @@ func getTasks(c *gin.Context) {
 // @Success 200 {array} TaskResponse
 // @Router /tasks/deleted [get]
 func getDeletedTasks(c *gin.Context) {
-	dbMutex.RLock()
-	defer dbMutex.RUnlock()
+	var tasks []Task
+	db.Unscoped().Preload("Category").Preload("Items").Where("deleted_at IS NOT NULL").Order("position ASC").Find(&tasks)
 
 	var responses []TaskResponse
-	for _, task := range db.Tasks {
-		if task.DeletedAt != nil {
-			responses = append(responses, convertToTaskResponse(task))
-		}
+	for _, task := range tasks {
+		responses = append(responses, convertToTaskResponse(task))
 	}
 
 	c.JSON(200, responses)
@@ -614,17 +449,13 @@ func getDeletedTasks(c *gin.Context) {
 // @Router /tasks/{id} [get]
 func getTask(c *gin.Context) {
 	id := c.Param("id")
-
-	dbMutex.RLock()
-	defer dbMutex.RUnlock()
-
-	task := findTaskByID(id, false)
-	if task == nil {
+	var task Task
+	if err := db.Preload("Category").Preload("Items").First(&task, "id = ?", id).Error; err != nil {
 		c.JSON(404, gin.H{"error": "Task not found"})
 		return
 	}
 
-	response := convertToTaskResponse(*task)
+	response := convertToTaskResponse(task)
 	c.JSON(200, response)
 }
 
@@ -641,25 +472,21 @@ func getTask(c *gin.Context) {
 // @Router /tasks/{id} [put]
 func updateTask(c *gin.Context) {
 	id := c.Param("id")
+	var task Task
+	if err := db.First(&task, "id = ?", id).Error; err != nil {
+		c.JSON(404, gin.H{"error": "Task not found"})
+		return
+	}
 
 	var input struct {
-		CategoryID string   `json:"category_id"`
-		Name       string   `json:"name"`
-		IsSuccess  bool     `json:"is_success"`
-		Price      *float32 `json:"price"`
+		CategoryID uuid.UUID `json:"category_id"`
+		Name       string    `json:"name"`
+		IsSuccess  bool      `json:"is_success"`
+		Price      *float32  `json:"price"`
 	}
 
 	if err := c.ShouldBindJSON(&input); err != nil {
 		c.JSON(400, gin.H{"error": err.Error()})
-		return
-	}
-
-	dbMutex.Lock()
-	defer dbMutex.Unlock()
-
-	task := findTaskByID(id, false)
-	if task == nil {
-		c.JSON(404, gin.H{"error": "Task not found"})
 		return
 	}
 
@@ -668,9 +495,11 @@ func updateTask(c *gin.Context) {
 	task.IsSuccess = input.IsSuccess
 	task.Price = input.Price
 
-	saveDatabase()
+	db.Save(&task)
 
-	response := convertToTaskResponse(*task)
+	db.Preload("Category").Preload("Items").First(&task, task.ID)
+	response := convertToTaskResponse(task)
+
 	c.JSON(200, response)
 }
 
@@ -687,6 +516,11 @@ func updateTask(c *gin.Context) {
 // @Router /tasks/{id}/position [put]
 func updateTaskPosition(c *gin.Context) {
 	id := c.Param("id")
+	var task Task
+	if err := db.First(&task, "id = ?", id).Error; err != nil {
+		c.JSON(404, gin.H{"error": "Task not found"})
+		return
+	}
 
 	var input struct {
 		Position int `json:"position"`
@@ -697,38 +531,28 @@ func updateTaskPosition(c *gin.Context) {
 		return
 	}
 
-	dbMutex.Lock()
-	defer dbMutex.Unlock()
-
-	task := findTaskByID(id, false)
-	if task == nil {
-		c.JSON(404, gin.H{"error": "Task not found"})
-		return
-	}
-
 	oldPos := task.Position
 	newPos := input.Position
 
-	if oldPos != newPos {
-		if oldPos < newPos {
-			for i := range db.Tasks {
-				if db.Tasks[i].DeletedAt == nil && db.Tasks[i].Position > oldPos && db.Tasks[i].Position <= newPos {
-					db.Tasks[i].Position--
-				}
-			}
-		} else {
-			for i := range db.Tasks {
-				if db.Tasks[i].DeletedAt == nil && db.Tasks[i].Position >= newPos && db.Tasks[i].Position < oldPos {
-					db.Tasks[i].Position++
-				}
-			}
-		}
-		task.Position = newPos
+	if oldPos == newPos {
+		db.Preload("Category").Preload("Items").First(&task, task.ID)
+		response := convertToTaskResponse(task)
+		c.JSON(200, response)
+		return
 	}
 
-	saveDatabase()
+	if oldPos < newPos {
+		db.Model(&Task{}).Where("position > ? AND position <= ?", oldPos, newPos).Update("position", gorm.Expr("position - 1"))
+	} else {
+		db.Model(&Task{}).Where("position >= ? AND position < ?", newPos, oldPos).Update("position", gorm.Expr("position + 1"))
+	}
 
-	response := convertToTaskResponse(*task)
+	task.Position = newPos
+	db.Save(&task)
+
+	db.Preload("Category").Preload("Items").First(&task, task.ID)
+	response := convertToTaskResponse(task)
+
 	c.JSON(200, response)
 }
 
@@ -742,26 +566,15 @@ func updateTaskPosition(c *gin.Context) {
 // @Router /tasks/{id} [delete]
 func deleteTask(c *gin.Context) {
 	id := c.Param("id")
-
-	dbMutex.Lock()
-	defer dbMutex.Unlock()
-
-	task := findTaskByID(id, false)
-	if task == nil {
+	var task Task
+	if err := db.First(&task, "id = ?", id).Error; err != nil {
 		c.JSON(404, gin.H{"error": "Task not found"})
 		return
 	}
 
-	now := time.Now()
-	task.DeletedAt = &now
+	db.Delete(&task)
+	db.Model(&Task{}).Where("position > ?", task.Position).Update("position", gorm.Expr("position - 1"))
 
-	for i := range db.Tasks {
-		if db.Tasks[i].DeletedAt == nil && db.Tasks[i].Position > task.Position {
-			db.Tasks[i].Position--
-		}
-	}
-
-	saveDatabase()
 	c.JSON(200, gin.H{"message": "Task deleted (soft delete)"})
 }
 
@@ -776,33 +589,27 @@ func deleteTask(c *gin.Context) {
 // @Router /tasks/{id}/restore [put]
 func restoreTask(c *gin.Context) {
 	id := c.Param("id")
-
-	dbMutex.Lock()
-	defer dbMutex.Unlock()
-
-	task := findTaskByID(id, true)
-	if task == nil {
+	var task Task
+	if err := db.Unscoped().First(&task, "id = ?", id).Error; err != nil {
 		c.JSON(404, gin.H{"error": "Task not found"})
 		return
 	}
 
-	if task.DeletedAt == nil {
+	if task.DeletedAt.Time.IsZero() {
 		c.JSON(400, gin.H{"error": "Task is not deleted"})
 		return
 	}
 
-	maxPos := -1
-	for _, t := range db.Tasks {
-		if t.DeletedAt == nil && t.Position > maxPos {
-			maxPos = t.Position
-		}
-	}
+	var maxPos int
+	db.Model(&Task{}).Select("COALESCE(MAX(position), -1)").Scan(&maxPos)
 	task.Position = maxPos + 1
-	task.DeletedAt = nil
 
-	saveDatabase()
+	db.Unscoped().Model(&task).Update("deleted_at", nil)
+	db.Save(&task)
 
-	response := convertToTaskResponse(*task)
+	db.Preload("Category").Preload("Items").First(&task, task.ID)
+	response := convertToTaskResponse(task)
+
 	c.JSON(200, gin.H{"message": "Task restored", "task": response})
 }
 
@@ -816,37 +623,22 @@ func restoreTask(c *gin.Context) {
 // @Router /tasks/{id}/permanent [delete]
 func permanentDeleteTask(c *gin.Context) {
 	id := c.Param("id")
-
-	dbMutex.Lock()
-	defer dbMutex.Unlock()
-
-	task := findTaskByID(id, true)
-	if task == nil {
+	var task Task
+	if err := db.Unscoped().First(&task, "id = ?", id).Error; err != nil {
 		c.JSON(404, gin.H{"error": "Task not found"})
 		return
 	}
 
-	// Delete files
-	items := getTaskItemsByID(id)
+	var items []TaskItem
+	db.Where("task_id = ?", id).Find(&items)
 	for _, item := range items {
 		if item.Data != "" {
 			oldPath := strings.TrimPrefix(item.Data, "/static/")
 			os.Remove(filepath.Join("uploads", oldPath))
 		}
 	}
-
-	// Delete task items
-	newItems := []TaskItem{}
-	for _, item := range db.TaskItems {
-		if item.TaskID != id {
-			newItems = append(newItems, item)
-		}
-	}
-	db.TaskItems = newItems
-
-	// Delete task
-	deleteTaskByID(id)
-	saveDatabase()
+	db.Unscoped().Where("task_id = ?", id).Delete(&TaskItem{})
+	db.Unscoped().Delete(&task)
 
 	c.JSON(200, gin.H{"message": "Task permanently deleted"})
 }
@@ -864,6 +656,11 @@ func permanentDeleteTask(c *gin.Context) {
 // @Router /tasks/{id}/success [put]
 func markTaskSuccess(c *gin.Context) {
 	id := c.Param("id")
+	var task Task
+	if err := db.First(&task, "id = ?", id).Error; err != nil {
+		c.JSON(404, gin.H{"error": "Task not found"})
+		return
+	}
 
 	var input struct {
 		IsSuccess bool     `json:"is_success"`
@@ -875,21 +672,14 @@ func markTaskSuccess(c *gin.Context) {
 		return
 	}
 
-	dbMutex.Lock()
-	defer dbMutex.Unlock()
-
-	task := findTaskByID(id, false)
-	if task == nil {
-		c.JSON(404, gin.H{"error": "Task not found"})
-		return
-	}
-
 	task.IsSuccess = input.IsSuccess
 	task.Price = input.Price
 
-	saveDatabase()
+	db.Save(&task)
 
-	response := convertToTaskResponse(*task)
+	db.Preload("Category").Preload("Items").First(&task, task.ID)
+	response := convertToTaskResponse(task)
+
 	c.JSON(200, response)
 }
 
@@ -910,24 +700,8 @@ func createTaskItem(c *gin.Context) {
 		c.JSON(400, gin.H{"error": err.Error()})
 		return
 	}
-
-	dbMutex.Lock()
-	item.ID = uuid.New().String()
 	item.Time = time.Now()
-
-	// Auto-assign position based on existing items for this task
-	maxPos := 0
-	for _, existingItem := range db.TaskItems {
-		if existingItem.TaskID == item.TaskID && existingItem.Position > maxPos {
-			maxPos = existingItem.Position
-		}
-	}
-	item.Position = maxPos + 1
-
-	db.TaskItems = append(db.TaskItems, item)
-	saveDatabase()
-	dbMutex.Unlock()
-
+	db.Create(&item)
 	c.JSON(201, item)
 }
 
@@ -938,9 +712,9 @@ func createTaskItem(c *gin.Context) {
 // @Success 200 {array} TaskItem
 // @Router /task-items [get]
 func getTaskItems(c *gin.Context) {
-	dbMutex.RLock()
-	defer dbMutex.RUnlock()
-	c.JSON(200, db.TaskItems)
+	var items []TaskItem
+	db.Find(&items)
+	c.JSON(200, items)
 }
 
 // @Summary Get task item by ID
@@ -953,16 +727,11 @@ func getTaskItems(c *gin.Context) {
 // @Router /task-items/{id} [get]
 func getTaskItem(c *gin.Context) {
 	id := c.Param("id")
-
-	dbMutex.RLock()
-	defer dbMutex.RUnlock()
-
-	item := findTaskItemByID(id)
-	if item == nil {
+	var item TaskItem
+	if err := db.First(&item, "id = ?", id).Error; err != nil {
 		c.JSON(404, gin.H{"error": "Task item not found"})
 		return
 	}
-
 	c.JSON(200, item)
 }
 
@@ -975,11 +744,8 @@ func getTaskItem(c *gin.Context) {
 // @Router /tasks/{id}/items [get]
 func getTaskItemsByTaskID(c *gin.Context) {
 	taskID := c.Param("id")
-
-	dbMutex.RLock()
-	defer dbMutex.RUnlock()
-
-	items := getTaskItemsByID(taskID)
+	var items []TaskItem
+	db.Where("task_id = ?", taskID).Find(&items)
 	c.JSON(200, items)
 }
 
@@ -996,27 +762,16 @@ func getTaskItemsByTaskID(c *gin.Context) {
 // @Router /task-items/{id} [put]
 func updateTaskItem(c *gin.Context) {
 	id := c.Param("id")
-
-	var input TaskItem
-	if err := c.ShouldBindJSON(&input); err != nil {
-		c.JSON(400, gin.H{"error": err.Error()})
-		return
-	}
-
-	dbMutex.Lock()
-	defer dbMutex.Unlock()
-
-	item := findTaskItemByID(id)
-	if item == nil {
+	var item TaskItem
+	if err := db.First(&item, "id = ?", id).Error; err != nil {
 		c.JSON(404, gin.H{"error": "Task item not found"})
 		return
 	}
-
-	item.Type = input.Type
-	item.Data = input.Data
-	item.TaskID = input.TaskID
-
-	saveDatabase()
+	if err := c.ShouldBindJSON(&item); err != nil {
+		c.JSON(400, gin.H{"error": err.Error()})
+		return
+	}
+	db.Save(&item)
 	c.JSON(200, item)
 }
 
@@ -1030,12 +785,8 @@ func updateTaskItem(c *gin.Context) {
 // @Router /task-items/{id} [delete]
 func deleteTaskItem(c *gin.Context) {
 	id := c.Param("id")
-
-	dbMutex.Lock()
-	defer dbMutex.Unlock()
-
-	item := findTaskItemByID(id)
-	if item == nil {
+	var item TaskItem
+	if err := db.First(&item, "id = ?", id).Error; err != nil {
 		c.JSON(404, gin.H{"error": "Task item not found"})
 		return
 	}
@@ -1045,16 +796,14 @@ func deleteTaskItem(c *gin.Context) {
 		os.Remove(filepath.Join("uploads", oldPath))
 	}
 
-	deleteTaskItemByID(id)
-	saveDatabase()
-
+	db.Delete(&item)
 	c.JSON(200, gin.H{"message": "Task item deleted"})
 }
 
 // File upload handlers
 
 // @Summary Upload image
-// @Description Upload an image file (JPEG, PNG, GIF, BMP, TIFF, WebP). HEIC/HEIF not supported.
+// @Description Upload an image file in any format (JPEG, PNG, GIF, BMP, TIFF, WebP)
 // @Tags uploads
 // @Accept multipart/form-data
 // @Produce json
@@ -1075,8 +824,10 @@ func uploadImage(c *gin.Context) {
 	}
 	defer file.Close()
 
+	// Get original extension
 	originalExt := strings.ToLower(filepath.Ext(handler.Filename))
 
+	// Decode image
 	img, format, err := decodeImage(file, originalExt)
 	if err != nil {
 		c.JSON(400, UploadResponse{
@@ -1089,8 +840,10 @@ func uploadImage(c *gin.Context) {
 
 	log.Printf("Image decoded successfully. Format: %s, Original ext: %s", format, originalExt)
 
+	// Generate unique ID
 	fileID := uuid.New().String()
 
+	// Determine save extension (keep original or convert to JPEG)
 	saveExt := originalExt
 	contentType := ""
 
@@ -1111,16 +864,14 @@ func uploadImage(c *gin.Context) {
 		saveExt = ".tiff"
 		contentType = "image/tiff"
 	case ".webp":
-		saveExt = ".jpg"
-		contentType = "image/jpeg"
-	case ".heic", ".heif":
-		saveExt = ".jpg"
+		saveExt = ".jpg" // Convert WebP to JPEG
 		contentType = "image/jpeg"
 	default:
-		saveExt = ".jpg"
+		saveExt = ".jpg" // Default to JPEG
 		contentType = "image/jpeg"
 	}
 
+	// Resize image (optional - only if image is too large)
 	bounds := img.Bounds()
 	width := bounds.Dx()
 	if width > 2048 {
@@ -1128,8 +879,10 @@ func uploadImage(c *gin.Context) {
 		log.Println("Image resized to 2048px width")
 	}
 
+	// Save path
 	savePath := fmt.Sprintf("uploads/%s%s", fileID, saveExt)
 
+	// Save image
 	err = saveImage(img, savePath, saveExt)
 	if err != nil {
 		c.JSON(500, UploadResponse{
@@ -1140,6 +893,7 @@ func uploadImage(c *gin.Context) {
 		return
 	}
 
+	// Get file size
 	fileInfo, err := os.Stat(savePath)
 	if err != nil {
 		c.JSON(500, UploadResponse{
@@ -1151,7 +905,8 @@ func uploadImage(c *gin.Context) {
 	}
 	fileSize := fileInfo.Size()
 
-	imageURL := fmt.Sprintf("/static/%s%s", fileID, saveExt)
+	// Generate URL
+	imageURL := fmt.Sprintf("/uploads/%s%s", fileID, saveExt)
 
 	c.JSON(200, UploadResponse{
 		Success:    true,
@@ -1190,15 +945,18 @@ func uploadAudio(c *gin.Context) {
 	}
 	defer file.Close()
 
+	// Generate unique ID
 	fileID := uuid.New().String()
 	ext := strings.ToLower(filepath.Ext(handler.Filename))
 
+	// If no extension, default to .mp3
 	if ext == "" {
 		ext = ".mp3"
 	}
 
 	savePath := fmt.Sprintf("uploads/%s%s", fileID, ext)
 
+	// Save file
 	if err := c.SaveUploadedFile(handler, savePath); err != nil {
 		c.JSON(500, UploadResponse{
 			Success:    false,
@@ -1208,6 +966,7 @@ func uploadAudio(c *gin.Context) {
 		return
 	}
 
+	// Get file size
 	fileInfo, err := os.Stat(savePath)
 	if err != nil {
 		c.JSON(500, UploadResponse{
@@ -1219,8 +978,9 @@ func uploadAudio(c *gin.Context) {
 	}
 	fileSize := fileInfo.Size()
 
-	audioURL := fmt.Sprintf("/static/%s%s", fileID, ext)
+	audioURL := fmt.Sprintf("http://31.187.74.228:1212/test/uploads/%s%s", fileID, ext)
 
+	// Determine content type based on extension
 	contentType := "audio/mpeg"
 	switch ext {
 	case ".mp3":
@@ -1278,15 +1038,18 @@ func uploadVideo(c *gin.Context) {
 	}
 	defer file.Close()
 
+	// Generate unique ID
 	fileID := uuid.New().String()
 	ext := strings.ToLower(filepath.Ext(handler.Filename))
 
+	// If no extension, default to .mp4
 	if ext == "" {
 		ext = ".mp4"
 	}
 
 	savePath := fmt.Sprintf("uploads/%s%s", fileID, ext)
 
+	// Save file
 	if err := c.SaveUploadedFile(handler, savePath); err != nil {
 		c.JSON(500, UploadResponse{
 			Success:    false,
@@ -1296,6 +1059,7 @@ func uploadVideo(c *gin.Context) {
 		return
 	}
 
+	// Get file size
 	fileInfo, err := os.Stat(savePath)
 	if err != nil {
 		c.JSON(500, UploadResponse{
@@ -1307,8 +1071,9 @@ func uploadVideo(c *gin.Context) {
 	}
 	fileSize := fileInfo.Size()
 
-	videoURL := fmt.Sprintf("/static/%s%s", fileID, ext)
+	videoURL := fmt.Sprintf("http://31.187.74.228:1212/test/uploads/%s%s", fileID, ext)
 
+	// Determine content type based on extension
 	contentType := "video/mp4"
 	switch ext {
 	case ".mp4":
