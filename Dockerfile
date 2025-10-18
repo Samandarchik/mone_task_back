@@ -1,10 +1,10 @@
-# Dockerfile
+# Build stage
 FROM golang:1.24.2-alpine AS builder
+
+WORKDIR /app
 
 # Install build dependencies
 RUN apk add --no-cache git gcc musl-dev
-
-WORKDIR /app
 
 # Copy go mod files
 COPY go.mod go.sum ./
@@ -14,26 +14,27 @@ RUN go mod download
 COPY . .
 
 # Build the application
-RUN CGO_ENABLED=1 GOOS=linux go build -o main .
+RUN CGO_ENABLED=1 GOOS=linux go build -a -installsuffix cgo -o main .
 
-# Final stage
+# Runtime stage
 FROM alpine:latest
 
-RUN apk --no-cache add ca-certificates
+WORKDIR /app
 
-WORKDIR /root/
+# Install runtime dependencies
+RUN apk --no-cache add ca-certificates tzdata
 
 # Copy binary from builder
 COPY --from=builder /app/main .
 
-# Create uploads directory
-RUN mkdir -p uploads
+# Create necessary directories
+RUN mkdir -p /app/uploads /app/data
 
-# Copy swagger docs if exists
-COPY --from=builder /app/docs ./docs
+# Set timezone
+ENV TZ=Asia/Tashkent
 
 # Expose port
 EXPOSE 1212
 
-# Run
+# Run the application
 CMD ["./main"]

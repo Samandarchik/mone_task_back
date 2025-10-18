@@ -1,0 +1,77 @@
+{
+  "categories": [
+    {
+      "id": "02a7d6de-0ccb-4e0c-ae2a-7ca67cf27326",
+      "data": "Marxabo"
+    },
+    {
+      "id": "c5b48403-c298-48ff-983c-35ffe514cc67",
+      "data": "Gelyon"
+    }
+  ],
+  
+  "tasks": [
+    {
+      "id": "7ce18c75-7841-44af-8b97-e4ba2e09b4b7",
+      "category_id": "",
+      "name": "Soat 6da tortlarni yetkazib berish",
+      "is_success": false,
+      "price": 0,
+      "position": 1
+    },
+    {
+      "id": "c3626a50-4adf-463e-89e9-fae7900544a1",
+      "category_id": "c5b48403-c298-48ff-983c-35ffe514cc67",
+      "name": "Mone Gelyon",
+      "is_success": false,
+      "price": 120,
+      "position": 6
+    },
+    {
+      "id": "95b025d5-b616-49a9-887a-835545d55fbb",
+      "category_id": "c5b48403-c298-48ff-983c-35ffe514cc67",
+      "name": "mone positions 3",
+      "is_success": false,
+      "price": 120,
+      "position": 4
+    },
+    {
+      "id": "8fceac10-5426-424e-aa31-5a163daf2be4",
+      "category_id": "c5b48403-c298-48ff-983c-35ffe514cc67",
+      "name": "mone 2",
+      "is_success": false,
+      "price": 120,
+      "position": 2
+    }
+  ],
+  "task_items": [
+    {
+      "id": "b0d1889d-a05d-459c-b415-2a7cc537b577",
+      "task_id": "7ce18c75-7841-44af-8b97-e4ba2e09b4b7",
+      "type": "image",
+      "data": "/static/29e37da9-e9ca-455c-abc0-af6483480838.jpg",
+      "time": "2025-10-18T01:35:24.375796+05:00"
+    },
+    {
+      "id": "014b3caa-61c9-47a5-93ab-2cc488cdef6b",
+      "task_id": "7ce18c75-7841-44af-8b97-e4ba2e09b4b7",
+      "type": "text",
+      "data": "Rafero tort 10ta pishirib yuborish",
+      "time": "2025-10-18T01:39:37.931218+05:00"
+    },
+    {
+      "id": "4eb1ca21-4a92-4144-8212-0c86af117768",
+      "task_id": "7ce18c75-7841-44af-8b97-e4ba2e09b4b7",
+      "type": "text",
+      "data": "3",
+      "time": "2025-10-18T01:40:03.240662+05:00"
+    },
+    {
+      "id": "35624c5a-0a63-4799-8466-580f48a65e46",
+      "task_id": "7ce18c75-7841-44af-8b97-e4ba2e09b4b7",
+      "type": "text",
+      "data": "4ta",
+      "time": "2025-10-18T01:40:16.735348+05:00"
+    }
+  ]
+}

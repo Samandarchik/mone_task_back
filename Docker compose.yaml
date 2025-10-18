@@ -1,6 +1,6 @@
 
 services:
-  taskmanager:
+  taskmanager-api:
     build:
       context: .
       dockerfile: Dockerfile
@@ -8,14 +8,14 @@ services:
     ports:
       - "1212:1212"
     volumes:
-      - ./uploads:/root/uploads
-      - ./database.json:/root/database.json
-    restart: unless-stopped
+      - ./uploads:/app/uploads
+      - ./data/database.json:/app/data/database.json
     environment:
-      - GIN_MODE=release
-    networks:
-      - taskmanager-network
-
-networks:
-  taskmanager-network:
-    driver: bridge
+      - TZ=Asia/Tashkent
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:1212/categories"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
