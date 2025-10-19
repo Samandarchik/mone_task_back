@@ -7,6 +7,17 @@ definitions:
       id:
         type: string
     type: object
+  main.CategoryWithTasksResponse:
+    properties:
+      data:
+        type: string
+      id:
+        type: string
+      tasks:
+        items:
+          $ref: '#/definitions/main.TaskResponse'
+        type: array
+    type: object
   main.TaskItem:
     properties:
       data:
@@ -175,7 +186,7 @@ paths:
       tags:
       - categories
     get:
-      description: Get a single category by its ID
+      description: Get a single category by its ID with all its tasks
       parameters:
       - description: Category ID
         in: path
@@ -188,14 +199,14 @@ paths:
         "200":
           description: OK
           schema:
-            $ref: '#/definitions/main.Category'
+            $ref: '#/definitions/main.CategoryWithTasksResponse'
         "404":
           description: Not Found
           schema:
             additionalProperties:
               type: string
             type: object
-      summary: Get category by ID
+      summary: Get category with tasks
       tags:
       - categories
     put:

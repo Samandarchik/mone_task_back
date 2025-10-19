@@ -90,14 +90,14 @@ const docTemplate = `{
         },
         "/categories/{id}": {
             "get": {
-                "description": "Get a single category by its ID",
+                "description": "Get a single category by its ID with all its tasks",
                 "produces": [
                     "application/json"
                 ],
                 "tags": [
                     "categories"
                 ],
-                "summary": "Get category by ID",
+                "summary": "Get category with tasks",
                 "parameters": [
                     {
                         "type": "string",
@@ -111,7 +111,7 @@ const docTemplate = `{
                     "200": {
                         "description": "OK",
                         "schema": {
-                            "$ref": "#/definitions/main.Category"
+                            "$ref": "#/definitions/main.CategoryWithTasksResponse"
                         }
                     },
                     "404": {
@@ -1066,6 +1066,23 @@ const docTemplate = `{
                 },
                 "id": {
                     "type": "string"
+                }
+            }
+        },
+        "main.CategoryWithTasksResponse": {
+            "type": "object",
+            "properties": {
+                "data": {
+                    "type": "string"
+                },
+                "id": {
+                    "type": "string"
+                },
+                "tasks": {
+                    "type": "array",
+                    "items": {
+                        "$ref": "#/definitions/main.TaskResponse"
+                    }
                 }
             }
         },
