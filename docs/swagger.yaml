@@ -3,28 +3,23 @@ definitions:
   main.Category:
     properties:
       data:
-        example: Work
         type: string
       id:
-        example: 550e8400-e29b-41d4-a716-446655440000
         type: string
     type: object
   main.TaskItem:
     properties:
       data:
-        example: /static/image.jpg
         type: string
       id:
-        example: 550e8400-e29b-41d4-a716-446655440002
         type: string
+      position:
+        type: integer
       task_id:
-        example: 550e8400-e29b-41d4-a716-446655440001
         type: string
       time:
-        example: "2025-10-17T12:00:00Z"
         type: string
       type:
-        example: image
         type: string
     type: object
   main.TaskItemResponse:
@@ -40,6 +35,8 @@ definitions:
         type: object
       id:
         type: string
+      position:
+        type: integer
       type:
         type: string
     type: object
@@ -94,13 +91,13 @@ definitions:
       success:
         type: boolean
     type: object
-host: localhost:1212
+host: task.monebakeryuz.uz
 info:
   contact:
     email: support@swagger.io
     name: API Support
     url: http://www.swagger.io/support
-  description: Task Management API with Categories, Tasks and Task Items
+  description: Task Management API with Categories, Tasks and Task Items (JSON Storage)
   license:
     name: Apache 2.0
     url: http://www.apache.org/licenses/LICENSE-2.0.html
@@ -735,8 +732,8 @@ paths:
     post:
       consumes:
       - multipart/form-data
-      description: Upload an image file in any format (JPEG, PNG, GIF, BMP, TIFF,
-        WebP, HEIC, HEIF)
+      description: Upload an image file (JPEG, PNG, GIF, BMP, TIFF, WebP). HEIC/HEIF
+        not supported.
       parameters:
       - description: Image file
         in: formData
@@ -791,5 +788,5 @@ paths:
       tags:
       - uploads
 schemes:
-- http
+- https
 swagger: "2.0"

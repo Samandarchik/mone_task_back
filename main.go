@@ -12,6 +12,7 @@ import (
 	"mime/multipart"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -40,9 +41,9 @@ import (
 // @license.name Apache 2.0
 // @license.url http://www.apache.org/licenses/LICENSE-2.0.html
 
-// @host localhost:1212
+// @host task.monebakeryuz.uz
 // @BasePath /
-// @schemes http
+// @schemes https
 
 // Models
 type Category struct {
@@ -102,6 +103,12 @@ type TaskResponse struct {
 	TaskName   []TaskItemResponse `json:"task_name"`
 }
 
+type CategoryWithTasksResponse struct {
+	ID    string         `json:"id"`
+	Data  string         `json:"data"`
+	Tasks []TaskResponse `json:"tasks"`
+}
+
 type UploadData struct {
 	ID          string `json:"id"`
 	Size        int64  `json:"size"`
@@ -122,8 +129,35 @@ type UploadResponse struct {
 var (
 	db       Database
 	dbMutex  sync.RWMutex
-	dataFile = "data/database.json"
+	dataFile = "database.json"
 )
+
+// CORS Middleware
+func CORSMiddleware() gin.HandlerFunc {
+	return func(c *gin.Context) {
+		origin := c.Request.Header.Get("Origin")
+
+		// Allow all origins
+		if origin != "" {
+			c.Writer.Header().Set("Access-Control-Allow-Origin", origin)
+		} else {
+			c.Writer.Header().Set("Access-Control-Allow-Origin", "*")
+		}
+
+		c.Writer.Header().Set("Access-Control-Allow-Credentials", "true")
+		c.Writer.Header().Set("Access-Control-Allow-Headers", "Content-Type, Content-Length, Accept-Encoding, X-CSRF-Token, Authorization, Accept, Origin, Cache-Control, X-Requested-With")
+		c.Writer.Header().Set("Access-Control-Allow-Methods", "POST, OPTIONS, GET, PUT, DELETE, PATCH")
+		c.Writer.Header().Set("Access-Control-Expose-Headers", "Content-Length, Content-Type")
+		c.Writer.Header().Set("Access-Control-Max-Age", "86400")
+
+		if c.Request.Method == "OPTIONS" {
+			c.AbortWithStatus(204)
+			return
+		}
+
+		c.Next()
+	}
+}
 
 // Database operations
 func loadDatabase() error {
@@ -200,7 +234,28 @@ func getTaskItemsByID(taskID string) []TaskItem {
 			items = append(items, item)
 		}
 	}
+	// Sort by position
+	sort.Slice(items, func(i, j int) bool {
+		return items[i].Position < items[j].Position
+	})
 	return items
+}
+
+func getTasksByCategoryID(categoryID string, includeDeleted bool) []Task {
+	var tasks []Task
+	for _, task := range db.Tasks {
+		if task.CategoryID == categoryID {
+			if !includeDeleted && task.DeletedAt != nil {
+				continue
+			}
+			tasks = append(tasks, task)
+		}
+	}
+	// Sort by position
+	sort.Slice(tasks, func(i, j int) bool {
+		return tasks[i].Position < tasks[j].Position
+	})
+	return tasks
 }
 
 func deleteCategoryByID(id string) bool {
@@ -246,19 +301,17 @@ func convertToTaskResponse(task Task) TaskResponse {
 		TaskName:   []TaskItemResponse{},
 	}
 
-	// Add category
 	cat := findCategoryByID(task.CategoryID)
 	if cat != nil {
 		response.Category = append(response.Category, *cat)
 	}
 
-	// Add items with position
 	items := getTaskItemsByID(task.ID)
-	for i, item := range items {
+	for _, item := range items {
 		itemResp := TaskItemResponse{
 			ID:       item.ID,
 			Type:     item.Type,
-			Position: i + 1, // Auto position based on order
+			Position: item.Position,
 		}
 		itemResp.Data.ID = item.ID
 		itemResp.Data.Data = item.Data
@@ -272,12 +325,10 @@ func convertToTaskResponse(task Task) TaskResponse {
 func decodeImage(file multipart.File, ext string) (image.Image, string, error) {
 	file.Seek(0, 0)
 
-	// HEIC/HEIF not supported in this version
 	if ext == ".heic" || ext == ".heif" {
 		return nil, "", fmt.Errorf("HEIC/HEIF format is not supported. Please convert to JPG/PNG")
 	}
 
-	// Try WebP
 	if ext == ".webp" {
 		img, err := webp.Decode(file)
 		if err == nil {
@@ -285,7 +336,6 @@ func decodeImage(file multipart.File, ext string) (image.Image, string, error) {
 		}
 	}
 
-	// Try BMP
 	if ext == ".bmp" {
 		img, err := bmp.Decode(file)
 		if err == nil {
@@ -293,7 +343,6 @@ func decodeImage(file multipart.File, ext string) (image.Image, string, error) {
 		}
 	}
 
-	// Try TIFF
 	if ext == ".tiff" || ext == ".tif" {
 		img, err := tiff.Decode(file)
 		if err == nil {
@@ -301,7 +350,6 @@ func decodeImage(file multipart.File, ext string) (image.Image, string, error) {
 		}
 	}
 
-	// Try standard image formats (JPEG, PNG, GIF)
 	file.Seek(0, 0)
 	img, format, err := image.Decode(file)
 	if err != nil {
@@ -334,25 +382,26 @@ func saveImage(img image.Image, savePath string, originalExt string) error {
 }
 
 func main() {
-	// Load database
 	if err := loadDatabase(); err != nil {
 		log.Fatal("Database yuklashda xatolik:", err)
 	}
 	log.Println("✓ Database muvaffaqiyatli yuklandi")
 
-	// Create uploads directory
 	os.MkdirAll("uploads", os.ModePerm)
 
 	r := gin.Default()
+
+	// CORS middleware qo'shish
+	r.Use(CORSMiddleware())
+
 	r.Static("/static", "./uploads")
 
-	// Swagger
 	r.GET("/swagger/*any", ginSwagger.WrapHandler(swaggerFiles.Handler))
 
 	// Category routes
 	r.POST("/categories", createCategory)
 	r.GET("/categories", getCategories)
-	r.GET("/categories/:id", getCategory)
+	r.GET("/categories/:id", getCategoryWithTasks)
 	r.PUT("/categories/:id", updateCategory)
 	r.DELETE("/categories/:id", deleteCategory)
 
@@ -425,15 +474,15 @@ func getCategories(c *gin.Context) {
 	c.JSON(200, db.Categories)
 }
 
-// @Summary Get category by ID
-// @Description Get a single category by its ID
+// @Summary Get category with tasks
+// @Description Get a single category by its ID with all its tasks
 // @Tags categories
 // @Produce json
 // @Param id path string true "Category ID"
-// @Success 200 {object} Category
+// @Success 200 {object} CategoryWithTasksResponse
 // @Failure 404 {object} map[string]string
 // @Router /categories/{id} [get]
-func getCategory(c *gin.Context) {
+func getCategoryWithTasks(c *gin.Context) {
 	id := c.Param("id")
 	dbMutex.RLock()
 	defer dbMutex.RUnlock()
@@ -443,7 +492,23 @@ func getCategory(c *gin.Context) {
 		c.JSON(404, gin.H{"error": "Category not found"})
 		return
 	}
-	c.JSON(200, cat)
+
+	// Get all tasks for this category
+	tasks := getTasksByCategoryID(id, false)
+
+	// Convert tasks to response format
+	var taskResponses []TaskResponse
+	for _, task := range tasks {
+		taskResponses = append(taskResponses, convertToTaskResponse(task))
+	}
+
+	response := CategoryWithTasksResponse{
+		ID:    cat.ID,
+		Data:  cat.Data,
+		Tasks: taskResponses,
+	}
+
+	c.JSON(200, response)
 }
 
 // @Summary Update category
@@ -575,10 +640,21 @@ func getTasks(c *gin.Context) {
 	defer dbMutex.RUnlock()
 
 	var responses []TaskResponse
+	var activeTasks []Task
+
 	for _, task := range db.Tasks {
 		if task.DeletedAt == nil {
-			responses = append(responses, convertToTaskResponse(task))
+			activeTasks = append(activeTasks, task)
 		}
+	}
+
+	// Sort by position
+	sort.Slice(activeTasks, func(i, j int) bool {
+		return activeTasks[i].Position < activeTasks[j].Position
+	})
+
+	for _, task := range activeTasks {
+		responses = append(responses, convertToTaskResponse(task))
 	}
 
 	c.JSON(200, responses)
@@ -826,7 +902,6 @@ func permanentDeleteTask(c *gin.Context) {
 		return
 	}
 
-	// Delete files
 	items := getTaskItemsByID(id)
 	for _, item := range items {
 		if item.Data != "" {
@@ -835,7 +910,6 @@ func permanentDeleteTask(c *gin.Context) {
 		}
 	}
 
-	// Delete task items
 	newItems := []TaskItem{}
 	for _, item := range db.TaskItems {
 		if item.TaskID != id {
@@ -844,7 +918,6 @@ func permanentDeleteTask(c *gin.Context) {
 	}
 	db.TaskItems = newItems
 
-	// Delete task
 	deleteTaskByID(id)
 	saveDatabase()
 
@@ -915,7 +988,6 @@ func createTaskItem(c *gin.Context) {
 	item.ID = uuid.New().String()
 	item.Time = time.Now()
 
-	// Auto-assign position based on existing items for this task
 	maxPos := 0
 	for _, existingItem := range db.TaskItems {
 		if existingItem.TaskID == item.TaskID && existingItem.Position > maxPos {

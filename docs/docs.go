@@ -970,7 +970,7 @@ const docTemplate = `{
         },
         "/upload/image": {
             "post": {
-                "description": "Upload an image file in any format (JPEG, PNG, GIF, BMP, TIFF, WebP, HEIC, HEIF)",
+                "description": "Upload an image file (JPEG, PNG, GIF, BMP, TIFF, WebP). HEIC/HEIF not supported.",
                 "consumes": [
                     "multipart/form-data"
                 ],
@@ -1062,12 +1062,10 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "data": {
-                    "type": "string",
-                    "example": "Work"
+                    "type": "string"
                 },
                 "id": {
-                    "type": "string",
-                    "example": "550e8400-e29b-41d4-a716-446655440000"
+                    "type": "string"
                 }
             }
         },
@@ -1075,24 +1073,22 @@ const docTemplate = `{
             "type": "object",
             "properties": {
                 "data": {
-                    "type": "string",
-                    "example": "/static/image.jpg"
+                    "type": "string"
                 },
                 "id": {
-                    "type": "string",
-                    "example": "550e8400-e29b-41d4-a716-446655440002"
+                    "type": "string"
+                },
+                "position": {
+                    "type": "integer"
                 },
                 "task_id": {
-                    "type": "string",
-                    "example": "550e8400-e29b-41d4-a716-446655440001"
+                    "type": "string"
                 },
                 "time": {
-                    "type": "string",
-                    "example": "2025-10-17T12:00:00Z"
+                    "type": "string"
                 },
                 "type": {
-                    "type": "string",
-                    "example": "image"
+                    "type": "string"
                 }
             }
         },
@@ -1115,6 +1111,9 @@ const docTemplate = `{
                 },
                 "id": {
                     "type": "string"
+                },
+                "position": {
+                    "type": "integer"
                 },
                 "type": {
                     "type": "string"
@@ -1205,11 +1204,11 @@ const docTemplate = `{
 // SwaggerInfo holds exported Swagger Info so clients can modify it
 var SwaggerInfo = &swag.Spec{
 	Version:          "1.0",
-	Host:             "localhost:1212",
+	Host:             "task.monebakeryuz.uz",
 	BasePath:         "/",
-	Schemes:          []string{"http"},
+	Schemes:          []string{"https"},
 	Title:            "Task Management API",
-	Description:      "Task Management API with Categories, Tasks and Task Items",
+	Description:      "Task Management API with Categories, Tasks and Task Items (JSON Storage)",
 	InfoInstanceName: "swagger",
 	SwaggerTemplate:  docTemplate,
 	LeftDelim:        "{{",
